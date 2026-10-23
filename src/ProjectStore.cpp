@@ -58,7 +58,7 @@ QString ProjectStore::chooseProjectSavePath(const QString &suggestedName)
 {
     QString safeName = suggestedName.trimmed();
     for (QChar &ch : safeName) {
-        if (ch == QLatin1Char('/') || ch == QLatin1Char('\\\\') || ch == QLatin1Char(':')
+        if (ch == QLatin1Char('/') || ch == QLatin1Char('\\') || ch == QLatin1Char(':')
                 || ch == QLatin1Char('*') || ch == QLatin1Char('?') || ch == QLatin1Char('"')
                 || ch == QLatin1Char('<') || ch == QLatin1Char('>') || ch == QLatin1Char('|'))
             ch = QLatin1Char('_');
