@@ -18,7 +18,8 @@ public:
     bool running() const { return m_running; }
     double progress() const { return m_progress; }
 
-    Q_INVOKABLE bool startExport(const QVariantList &timelineItems, const QString &outputUrl);
+    Q_INVOKABLE bool startExport(const QVariantList &timelineItems, const QString &outputUrl,
+                                int width, int height, int fps);
     Q_INVOKABLE void cancel();
 
 signals:
@@ -54,6 +55,9 @@ private:
     QStringList m_baseArguments;
     QString m_filterGraph;
     double m_timelineDuration = 0.0;
+    int m_outputWidth = 1920;
+    int m_outputHeight = 1080;
+    int m_outputFps = 30;
     bool m_running = false;
     bool m_usingGpuEncoder = false;
     bool m_fallbackTried = false;
