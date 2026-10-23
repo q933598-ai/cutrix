@@ -1354,10 +1354,18 @@ ApplicationWindow {
                                         delegate: Rectangle {
                                             id: timelineClip
                                             required property var modelData
+                                            property real dragOffsetX: 0
+                                            property real dragOffsetY: 0
+                                            property real dragStartX: 0
+                                            property real dragStartY: 0
+                                            property real dragStartClipX: 0
+                                            property real dragStartClipY: 2
+                                            property bool draggingClip: false
                                             x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
+                                               + (draggingClip ? dragOffsetX : 0)
                                             width: Math.max(3, Number(modelData.duration || 36) * timelineCanvas.timelineScale)
                                             height: 30
-                                            y: 2
+                                            y: 2 + (draggingClip ? dragOffsetY : 0)
                                             clip: true
                                             color: /\\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(modelData.name) ? "#226d6c" : "#315b9b"
                                             border.color: theme.accent
@@ -1390,12 +1398,6 @@ ApplicationWindow {
                                                 verticalAlignment: Text.AlignVCenter
                                                 elide: Text.ElideRight
                                             }
-                                            property real dragStartX: 0
-                                            property real dragStartY: 0
-                                            property real dragStartTimeline: 0
-                                            property real dragStartClipX: 0
-                                            property real dragStartClipY: 2
-                                            property bool draggingClip: false
                                             z: draggingClip ? 10 : 1
                                             MouseArea {
                                                 anchors.fill: parent
@@ -1403,12 +1405,13 @@ ApplicationWindow {
                                                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
+                                                    dragOffsetX = 0
+                                                    dragOffsetY = 0
+                                                    draggingClip = false
                                                     dragStartX = scenePos.x
                                                     dragStartY = scenePos.y
-                                                    dragStartTimeline = Number(timelineClip.modelData.start || 0)
                                                     dragStartClipX = timelineClip.x
                                                     dragStartClipY = timelineClip.y
-                                                    draggingClip = false
                                                 }
                                                 onPositionChanged: function(mouse) {
                                                     if (!pressed) return
@@ -1418,17 +1421,25 @@ ApplicationWindow {
                                                     if (!draggingClip && Math.abs(dx) + Math.abs(dy) > 4)
                                                         draggingClip = true
                                                     if (!draggingClip) return
-                                                    timelineClip.x = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
-                                                                                          dragStartClipX + dx))
-                                                    timelineClip.y = Math.max(-timelineClip.height - 2,
-                                                                              Math.min(timelineTrack.height + 2,
-                                                                                       dragStartClipY + dy))
+                                                    var previewX = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
+                                                                                       dragStartClipX + dx))
+                                                    var previewY = Math.max(-timelineClip.height - 2,
+                                                                            Math.min(timelineTrack.height + 2,
+                                                                                     dragStartClipY + dy))
+                                                    var modelX = Math.max(0, Number(timelineClip.modelData.start || 0)
+                                                                             * timelineCanvas.timelineScale)
+                                                    // Do not assign directly to x/y: that would permanently break
+                                                    // QML's model-position bindings after the drag is finished.
+                                                    timelineClip.dragOffsetX = previewX - modelX
+                                                    timelineClip.dragOffsetY = previewY - 2
                                                 }
                                                 onReleased: function(mouse) {
                                                     var wasDragging = draggingClip
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
+                                                    var draggedX = timelineClip.x
                                                     draggingClip = false
-                                                    timelineClip.y = 2
+                                                    dragOffsetX = 0
+                                                    dragOffsetY = 0
                                                     if (!wasDragging) return
 
                                                     var updated = root.mediaFiles.slice()
@@ -1440,13 +1451,10 @@ ApplicationWindow {
                                                             break
                                                         }
                                                     }
-                                                    if (movingIndex < 0) {
-                                                        timelineClip.x = dragStartClipX
-                                                        return
-                                                    }
+                                                    if (movingIndex < 0) return
 
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
-                                                    var desiredStart = Math.max(0, Math.round(timelineClip.x / Math.max(0.001, timelineCanvas.timelineScale)))
+                                                    var desiredStart = Math.max(0, Math.round(draggedX / Math.max(0.001, timelineCanvas.timelineScale)))
                                                     // The track rows start at y=25 and repeat every 37 pixels.
                                                     var targetTrack = Math.max(0, Math.min(3, Math.floor((scenePos.y - 23.5) / 37)))
                                                     var clipId = String(updated[movingIndex].clipId || "")
