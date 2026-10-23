@@ -951,7 +951,6 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: 164
             Layout.minimumHeight: 164
-            Layout.alignment: Qt.AlignBottom
             color: theme.panel
             border.color: theme.border
             ColumnLayout {
@@ -1128,34 +1127,6 @@ ApplicationWindow {
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
-        Rectangle {
-            id: mediaPanelResizeHandle
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            x: 8 + 126 + 7 + root.mediaPanelWidth - width
-            width: 8
-            color: resizeMouse.containsMouse || resizeMouse.pressed ? theme.accent : "transparent"
-            z: 50
-            visible: root.currentProjectPath !== ""
-            MouseArea {
-                id: resizeMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.SplitHCursor
-                property real pressX: 0
-                property int initialWidth: root.mediaPanelWidth
-                onPressed: function(mouse) {
-                    pressX = mapToItem(root, mouse.x, mouse.y).x
-                    initialWidth = root.mediaPanelWidth
-                }
-                onPositionChanged: function(mouse) {
-                    if (pressed) {
-                        var sceneX = mapToItem(root, mouse.x, mouse.y).x
-                        root.mediaPanelWidth = Math.max(180, Math.min(440, initialWidth + sceneX - pressX))
                     }
                 }
             }
