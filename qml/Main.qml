@@ -695,19 +695,26 @@ ApplicationWindow {
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
                     }
-                    GridLayout {
+                    Flickable {
                         Layout.fillWidth: true
-                        columns: 3
-                        columnSpacing: 5
-                        rowSpacing: 5
-                        Repeater {
-                            model: root.mediaFiles
-                            delegate: Rectangle {
-                                id: mediaCard
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.preferredHeight: width + 28
+                        Layout.fillHeight: true
+                        contentWidth: width
+                        contentHeight: mediaGrid.implicitHeight
+                        clip: true
+                        GridLayout {
+                            id: mediaGrid
+                            width: parent.width
+                            columns: 3
+                            columnSpacing: 5
+                            rowSpacing: 5
+                            Repeater {
+                                model: root.mediaFiles
+                                delegate: Rectangle {
+                                    id: mediaCard
+                                    required property var modelData
+                                    Layout.preferredWidth: (mediaGrid.width - 10) / 3
+                                    Layout.maximumWidth: (mediaGrid.width - 10) / 3
+                                    Layout.preferredHeight: 68
                                 clip: true
                                 opacity: cardDrag.active ? 0.72 : 1.0
                                 scale: cardDrag.active ? 0.96 : 1.0
@@ -715,13 +722,13 @@ ApplicationWindow {
                                 border.width: cardDrag.active ? 2 : 1
                                 border.color: cardDrag.active ? theme.accent2 : (root.selectedMedia === modelData.name ? theme.accent : theme.border)
 
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: 4
-                                    spacing: 3
-                                    Rectangle {
-                                        width: parent.width
-                                        height: width
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: 3
+                                        spacing: 2
+                                        Rectangle {
+                                            width: parent.width
+                                            height: 48
                                         color: theme.panelAlt
                                         border.color: theme.border
                                         clip: true
@@ -787,14 +794,15 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        Text {
-                            Layout.fillWidth: true
-                            visible: root.mediaFiles.length === 0
-                            text: "Медиатека пуста. Импортируй файлы, затем перетащи их на дорожку."
-                            color: theme.muted
-                            font.family: "monospace"
-                            font.pixelSize: 12
-                            wrapMode: Text.WordWrap
+                            Text {
+                                Layout.fillWidth: true
+                                visible: root.mediaFiles.length === 0
+                                text: "Медиатека пуста. Импортируй файлы, затем перетащи их на дорожку."
+                                color: theme.muted
+                                font.family: "monospace"
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                            }
                         }
                     }
                     Item { Layout.fillHeight: true }
