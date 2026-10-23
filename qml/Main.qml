@@ -14,7 +14,8 @@ ApplicationWindow {
     color: theme.background
 
     property string currentTheme: "Tokyo Night"
-    property string selectedMedia: "city.mp4"
+    property string selectedMedia: ""
+    property var mediaFiles: []
     property bool isPlaying: false
     property bool settingsOpen: false
     property int uiFontScale: 100
@@ -27,6 +28,34 @@ ApplicationWindow {
         "Rosé Pine": { background: "#191724", panel: "#1f1d2e", panelAlt: "#26233a", border: "#403d52", text: "#e0def4", muted: "#908caa", accent: "#c4a7e7", accent2: "#ebbcba", green: "#9ccfd8" }
     })
     readonly property var theme: palettes[currentTheme]
+
+    function fileNameFromUrl(url) {
+        var value = String(url)
+        var slash = value.lastIndexOf("/")
+        return decodeURIComponent(value.substring(slash + 1))
+    }
+
+    function importSelectedFiles(urls) {
+        var updated = root.mediaFiles.slice()
+        var added = 0
+        for (var i = 0; i < urls.length; ++i) {
+            var url = String(urls[i])
+            var exists = false
+            for (var j = 0; j < updated.length; ++j) {
+                if (updated[j].url === url) { exists = true; break }
+            }
+            if (!exists) {
+                updated.push({ url: url, name: fileNameFromUrl(url) })
+                ++added
+            }
+        }
+        root.mediaFiles = updated
+        if (updated.length > 0 && root.selectedMedia === "")
+            root.selectedMedia = updated[0].name
+        root.statusMessage = added > 0
+            ? "Импортировано файлов: " + added + " · всего в медиатеке: " + updated.length
+            : "Выбранные файлы уже есть в медиатеке"
+    }
 
     // Pixel-style client title bar: Niri does not always provide native decorations.
     header: Rectangle {
@@ -143,9 +172,13 @@ ApplicationWindow {
 
     FileDialog {
         id: importDialog
-        title: "Выбрать медиафайл"
-        nameFilters: ["Медиафайлы (*.mp4 *.mov *.mkv *.webm *.mp3 *.wav *.png *.jpg)", "Все файлы (*)"]
-        onAccepted: root.statusMessage = "Выбран файл: " + selectedFile + " · загрузка медиа пока не реализована"
+        title: "Импортировать медиа в Cutrix"
+        fileMode: FileDialog.OpenFiles
+        nameFilters: [
+            "Медиафайлы (*.mp4 *.mov *.mkv *.webm *.avi *.mp3 *.wav *.flac *.ogg *.png *.jpg *.jpeg *.webp)",
+            "Все файлы (*)"
+        ]
+        onAccepted: root.importSelectedFiles(selectedFiles)
     }
 
     Dialog {
@@ -335,30 +368,70 @@ ApplicationWindow {
                         columnSpacing: 7
                         rowSpacing: 7
                         Repeater {
-                            model: [["▧", "city.mp4", "00:12", "#293d72"], ["▧", "mountains.mp4", "00:08", "#3d5472"], ["▧", "sunset.mp4", "00:10", "#754b78"], ["♫", "bg-music.mp3", "03:24", "#275c60"], ["▧", "forest.png", "IMAGE", "#42664b"], ["✿", "cat.png", "IMAGE", "#65528b"]]
+                            model: root.mediaFiles
                             delegate: Rectangle {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 100
                                 color: theme.background
-                                border.color: root.selectedMedia === modelData[1] ? theme.accent : theme.border
+                                border.color: root.selectedMedia === modelData.name ? theme.accent : theme.border
                                 Column {
                                     anchors.fill: parent
                                     spacing: 2
                                     Rectangle {
                                         width: parent.width
                                         height: 63
-                                        color: modelData[3]
-                                        Text { anchors.centerIn: parent; text: modelData[0]; color: "#e5e9ff"; font.pixelSize: (26 * root.uiFontScale / 100); font.family: "monospace" }
+                                        color: theme.panelAlt
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: {
+                                                var n = modelData.name.toLowerCase()
+                                                if (/\\.(mp3|wav|flac|ogg|m4a)$/.test(n)) return "♫"
+                                                if (/\\.(png|jpe?g|webp|bmp|gif)$/.test(n)) return "▧"
+                                                return "▶"
+                                            }
+                                            color: theme.accent
+                                            font.pixelSize: 26 * root.uiFontScale / 100
+                                            font.family: "monospace"
+                                        }
                                     }
-                                    Text { anchors.left: parent.left; anchors.leftMargin: 4; text: modelData[1]; color: theme.text; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100); elide: Text.ElideRight; width: parent.width - 8 }
-                                    Text { anchors.left: parent.left; anchors.leftMargin: 4; text: modelData[2]; color: theme.muted; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100) }
+                                    Text {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 4
+                                        text: modelData.name
+                                        color: theme.text
+                                        font.family: "monospace"
+                                        font.pixelSize: 11 * root.uiFontScale / 100
+                                        elide: Text.ElideRight
+                                        width: parent.width - 8
+                                    }
+                                    Text {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 4
+                                        text: "ИМПОРТИРОВАН"
+                                        color: theme.muted
+                                        font.family: "monospace"
+                                        font.pixelSize: 9 * root.uiFontScale / 100
+                                    }
                                 }
                                 MouseArea {
                                     anchors.fill: parent
-                                    onClicked: { root.selectedMedia = modelData[1]; root.statusMessage = modelData[1] + " выбран (демо)" }
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.selectedMedia = modelData.name
+                                        root.statusMessage = modelData.name + " выбран · предпросмотр подключим следующим этапом"
+                                    }
                                 }
                             }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.mediaFiles.length === 0
+                            text: "Медиатека пуста. Нажми «+ Импортировать» и выбери файлы на диске."
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 12 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
                         }
                     }
                     Item { Layout.fillHeight: true }
@@ -449,7 +522,7 @@ ApplicationWindow {
                     anchors.margins: 9
                     spacing: 9
                     Text { text: "СВОЙСТВА"; color: theme.accent; font.family: "monospace"; font.bold: true }
-                    Text { text: root.selectedMedia; color: theme.text; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100) }
+                    Text { text: root.selectedMedia === "" ? "Файл не выбран" : root.selectedMedia; color: theme.text; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100); wrapMode: Text.Wrap }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text { text: "ПОЗИЦИЯ И МАСШТАБ"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                     Repeater {
