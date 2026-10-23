@@ -5,6 +5,7 @@
 #include <QQmlContext>
 #include "ProjectStore.h"
 #include "MediaTools.h"
+#include "ExportController.h"
 
 int main(int argc, char *argv[])
 {
@@ -29,9 +30,11 @@ int main(int argc, char *argv[])
 
     ProjectStore projectStore;
     MediaTools mediaTools;
+    ExportController exportController;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("projectStore", &projectStore);
     engine.rootContext()->setContextProperty("mediaTools", &mediaTools);
+    engine.rootContext()->setContextProperty("exportController", &exportController);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
