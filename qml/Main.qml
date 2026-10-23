@@ -1199,6 +1199,7 @@ ApplicationWindow {
                                                             Math.max(0, Number(timelineClip.modelData.start || 0) + index * (54 / Math.max(0.001, timelineCanvas.timelineScale))))
                                                         fillMode: Image.PreserveAspectCrop
                                                         asynchronous: true
+                                                        visible: !timelineClip.draggingClip
                                                         opacity: 0.7
                                                     }
                                                 }
@@ -1225,8 +1226,9 @@ ApplicationWindow {
                                                 preventStealing: true
                                                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
-                                                    dragStartX = mouse.x
-                                                    dragStartY = mouse.y
+                                                    var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
+                                                    dragStartX = scenePos.x
+                                                    dragStartY = scenePos.y
                                                     dragStartTimeline = Number(timelineClip.modelData.start || 0)
                                                     dragStartClipX = timelineClip.x
                                                     dragStartClipY = timelineClip.y
@@ -1234,14 +1236,12 @@ ApplicationWindow {
                                                 }
                                                 onPositionChanged: function(mouse) {
                                                     if (!pressed) return
-                                                    var dx = mouse.x - dragStartX
-                                                    var dy = mouse.y - dragStartY
-                                                    if (!draggingClip && Math.abs(dx) + Math.abs(dy) > 3)
+                                                    var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
+                                                    var dx = scenePos.x - dragStartX
+                                                    var dy = scenePos.y - dragStartY
+                                                    if (!draggingClip && Math.abs(dx) + Math.abs(dy) > 4)
                                                         draggingClip = true
                                                     if (!draggingClip) return
-
-                                                    // Move freely while dragging; lifting above the track lets the user
-                                                    // pass over another clip without the clip jumping back and forth.
                                                     timelineClip.x = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
                                                                                           dragStartClipX + dx))
                                                     timelineClip.y = Math.max(-timelineClip.height - 2,
