@@ -639,13 +639,32 @@ ApplicationWindow {
             }
             onTimelineAudioActiveChanged: syncToTimeline()
             onMediaStatusChanged: syncToTimeline()
-            Connections {
-                target: root
-                function onTimelinePositionChanged() { parent.syncToTimeline() }
+        }
+    }
+
+    // MediaPlayer is a non-visual QtObject and cannot contain Connections
+    // as child objects. Keep the Connections beside the Instantiator instead.
+    Connections {
+        target: root
+        function onTimelinePositionChanged() {
+            for (var i = 0; i < timelineAudioPlayers.count; ++i) {
+                var player = timelineAudioPlayers.objectAt(i)
+                if (player) player.syncToTimeline()
             }
-            Connections {
-                target: timelinePlaybackTimer
-                function onRunningChanged() { parent.syncToTimeline() }
+        }
+    }
+    Connections {
+        target: timelinePlaybackTimer
+        function onRunningChanged() {
+            for (var i = 0; i < timelineAudioPlayers.count; ++i) {
+                var player = timelineAudioPlayers.objectAt(i)
+                if (player) player.syncToTimeline()
+            }
+        }
+        function onTriggered() {
+            for (var i = 0; i < timelineAudioPlayers.count; ++i) {
+                var player = timelineAudioPlayers.objectAt(i)
+                if (player) player.syncToTimeline()
             }
         }
     }
