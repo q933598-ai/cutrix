@@ -332,7 +332,59 @@ ApplicationWindow {
                 Text { text: "СОЗДАНИЕ ПРОЕКТА"; color: theme.muted; font.family: "monospace"; font.bold: true; font.pixelSize: 11 }
             TextField { id: projectNameField; Layout.fillWidth: true; placeholderText: "Название проекта"; text: "Мой проект"; color: theme.text; placeholderTextColor: theme.muted; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
             Text { text: "РАЗРЕШЕНИЕ"; color: theme.muted; font.family: "monospace" }
-            ComboBox { id: resolutionBox; Layout.fillWidth: true; model: ["1920×1080", "2560×1440", "3840×2160", "1280×720"]; currentIndex: 0; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            ComboBox {
+                id: resolutionBox
+                Layout.fillWidth: true
+                model: ["1920×1080", "2560×1440", "3840×2160", "1280×720"]
+                currentIndex: 0
+                palette.text: theme.text
+                palette.window: theme.panel
+                palette.base: theme.panel
+                palette.highlight: theme.panelAlt
+                palette.highlightedText: theme.accent
+                contentItem: Text {
+                    leftPadding: 8
+                    rightPadding: 28
+                    text: resolutionBox.displayText
+                    color: theme.text
+                    font.family: "monospace"
+                    verticalAlignment: Text.AlignVCenter
+                }
+                indicator: Text {
+                    x: resolutionBox.width - width - 10
+                    y: (resolutionBox.height - height) / 2
+                    text: "▼"
+                    color: theme.accent
+                    font.pixelSize: 10
+                }
+                background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 }
+                delegate: ItemDelegate {
+                    width: resolutionBox.width
+                    contentItem: Text {
+                        text: modelData
+                        color: highlighted ? theme.accent : theme.text
+                        font.family: "monospace"
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    highlighted: resolutionBox.highlightedIndex === index
+                    background: Rectangle {
+                        color: parent.highlighted ? theme.panelAlt : theme.panel
+                        border.color: parent.highlighted ? theme.accent : theme.border
+                    }
+                }
+                popup: Popup {
+                    y: resolutionBox.height
+                    width: resolutionBox.width
+                    padding: 1
+                    contentItem: ListView {
+                        clip: true
+                        implicitHeight: contentHeight
+                        model: resolutionBox.delegateModel
+                        currentIndex: resolutionBox.highlightedIndex
+                    }
+                    background: Rectangle { color: theme.panel; border.color: theme.accent; border.width: 1 }
+                }
+            }
             Text { text: "ЧАСТОТА КАДРОВ"; color: theme.muted; font.family: "monospace" }
             ComboBox {
                 id: fpsBox
