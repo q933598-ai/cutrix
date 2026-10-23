@@ -697,9 +697,9 @@ ApplicationWindow {
                     }
                     GridLayout {
                         Layout.fillWidth: true
-                        columns: 2
-                        columnSpacing: 7
-                        rowSpacing: 7
+                        columns: 3
+                        columnSpacing: 5
+                        rowSpacing: 5
                         Repeater {
                             model: root.mediaFiles
                             delegate: Rectangle {
@@ -707,10 +707,13 @@ ApplicationWindow {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
-                                Layout.preferredHeight: width + 42
+                                Layout.preferredHeight: width + 28
                                 clip: true
-                                color: theme.background
-                                border.color: root.selectedMedia === modelData.name ? theme.accent : theme.border
+                                opacity: cardDrag.active ? 0.72 : 1.0
+                                scale: cardDrag.active ? 0.96 : 1.0
+                                color: cardDrag.active ? theme.panelAlt : theme.background
+                                border.width: cardDrag.active ? 2 : 1
+                                border.color: cardDrag.active ? theme.accent2 : (root.selectedMedia === modelData.name ? theme.accent : theme.border)
 
                                 Column {
                                     anchors.fill: parent
@@ -737,7 +740,7 @@ ApplicationWindow {
                                                   mediaCard.modelData.kind === "audio" ? "♫" :
                                                   mediaCard.modelData.kind === "image" ? "▧" : "▶"
                                             color: theme.accent
-                                            font.pixelSize: 28
+                                            font.pixelSize: 20
                                             font.family: "monospace"
                                         }
                                         Text {
@@ -761,6 +764,7 @@ ApplicationWindow {
                                 }
 
                                 Drag.active: cardDrag.active
+                                Drag.source: mediaCard
                                 Drag.dragType: Drag.Automatic
                                 Drag.mimeData: ({ "text/plain": String(mediaCard.modelData.url) })
                                 Drag.supportedActions: Qt.CopyAction
