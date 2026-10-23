@@ -47,6 +47,8 @@ ApplicationWindow {
         if (!projectStore.openProject(path)) { statusMessage = projectStore.lastError(); return }
         currentProjectPath = path
         currentProjectName = name || path.split("/").pop().replace(/\.cutrix$/, "")
+        mediaFiles = projectStore.projectMedia(path)
+        selectedMedia = mediaFiles.length > 0 ? mediaFiles[0].name : ""
         refreshProjects()
         statusMessage = "Открыт проект: " + currentProjectName
     }
@@ -74,6 +76,8 @@ ApplicationWindow {
             }
         }
         root.mediaFiles = updated
+        if (root.currentProjectPath !== "")
+            projectStore.saveProjectMedia(root.currentProjectPath, updated)
         if (updated.length > 0 && root.selectedMedia === "")
             root.selectedMedia = updated[0].name
         root.statusMessage = added > 0
@@ -177,7 +181,7 @@ ApplicationWindow {
             Action { text: "Импортировать медиа…"; onTriggered: importDialog.open() }
             Action { text: "Менеджер проектов"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
             Action { text: "Закрыть проект"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
-            Action { text: "Сохранить проект"; onTriggered: root.statusMessage = "Файл проекта сохранён; данные таймлайна появятся в следующих версиях." }
+            Action { text: "Сохранить проект"; onTriggered: { if (root.currentProjectPath !== "" && projectStore.saveProjectMedia(root.currentProjectPath, root.mediaFiles)) root.statusMessage = "Проект сохранён"; else root.statusMessage = projectStore.lastError() } }
             MenuSeparator {}
             Action { text: "Выход"; onTriggered: Qt.quit() }
         }
@@ -690,9 +694,10 @@ ApplicationWindow {
                         Repeater {
                             model: root.mediaFiles
                             delegate: Rectangle {
+                                id: mediaCard
                                 required property var modelData
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 100
+                                Layout.preferredHeight: 118
                                 color: theme.background
                                 border.color: root.selectedMedia === modelData.name ? theme.accent : theme.border
                                 Column {
@@ -700,57 +705,88 @@ ApplicationWindow {
                                     spacing: 2
                                     Rectangle {
                                         width: parent.width
-                                        height: 63
+                                        height: 76
                                         color: theme.panelAlt
+                                        clip: true
+                                        Image {
+                                            anchors.fill: parent
+                                            source: /\.(png|jpe?g|webp|bmp|gif)$/i.test(mediaCard.modelData.name) ? mediaCard.modelData.url : ""
+                                            fillMode: Image.PreserveAspectCrop
+                                            visible: source.toString() !== ""
+                                        }
+                                        Canvas {
+                                            anchors.fill: parent
+                                            visible: /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(mediaCard.modelData.name)
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.clearRect(0,0,width,height)
+                                                ctx.fillStyle = theme.panelAlt
+                                                ctx.fillRect(0,0,width,height)
+                                                ctx.fillStyle = theme.green
+                                                for (var x=3; x<width-3; x+=5) {
+                                                    var h = 5 + ((x*17 + mediaCard.modelData.name.length*13)%29)
+                                                    ctx.fillRect(x,(height-h)/2,3,h)
+                                                }
+                                            }
+                                        }
                                         Text {
                                             anchors.centerIn: parent
-                                            text: {
-                                                var n = modelData.name.toLowerCase()
-                                                if (/\.(mp3|wav|flac|ogg|m4a)$/.test(n)) return "♫"
-                                                if (/\.(png|jpe?g|webp|bmp|gif)$/.test(n)) return "▧"
-                                                return "▶"
-                                            }
+                                            visible: !/\.(png|jpe?g|webp|bmp|gif|mp3|wav|flac|ogg|m4a|aac)$/i.test(mediaCard.modelData.name)
+                                            text: "▶"
                                             color: theme.accent
-                                            font.pixelSize: 26 * root.uiFontScale / 100
+                                            font.pixelSize: 28
                                             font.family: "monospace"
+                                        }
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.bottom: parent.bottom
+                                            anchors.margins: 4
+                                            text: /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(mediaCard.modelData.name) ? "AUDIO" : /\.(png|jpe?g|webp|bmp|gif)$/i.test(mediaCard.modelData.name) ? "IMAGE" : "VIDEO"
+                                            color: theme.text
+                                            font.family: "monospace"
+                                            font.pixelSize: 9
                                         }
                                     }
                                     Text {
                                         anchors.left: parent.left
                                         anchors.leftMargin: 4
-                                        text: modelData.name
+                                        width: parent.width - 8
+                                        text: mediaCard.modelData.name
                                         color: theme.text
                                         font.family: "monospace"
-                                        font.pixelSize: 11 * root.uiFontScale / 100
+                                        font.pixelSize: 10
                                         elide: Text.ElideRight
-                                        width: parent.width - 8
                                     }
                                     Text {
                                         anchors.left: parent.left
                                         anchors.leftMargin: 4
-                                        text: "ИМПОРТИРОВАН"
-                                        color: theme.muted
+                                        text: mediaCard.modelData.missing ? "ФАЙЛ НЕ НАЙДЕН" : "ПЕРЕТАЩИ НА ДОРОЖКУ"
+                                        color: mediaCard.modelData.missing ? "#ff6b6b" : theme.muted
                                         font.family: "monospace"
-                                        font.pixelSize: 9 * root.uiFontScale / 100
+                                        font.pixelSize: 8
                                     }
                                 }
+                                Drag.active: dragMouse.drag.active
+                                Drag.dragType: Drag.Automatic
+                                Drag.mimeData: ({ "text/plain": mediaCard.modelData.url })
+                                Drag.supportedActions: Qt.CopyAction
                                 MouseArea {
+                                    id: dragMouse
                                     anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        root.selectedMedia = modelData.name
-                                        root.statusMessage = modelData.name + " выбран · предпросмотр подключим следующим этапом"
-                                    }
+                                    drag.target: mediaCard
+                                    onPressed: root.selectedMedia = mediaCard.modelData.name
+                                    onReleased: mediaCard.Drag.drop()
+                                    onClicked: root.selectedMedia = mediaCard.modelData.name
                                 }
                             }
                         }
                         Text {
                             Layout.fillWidth: true
                             visible: root.mediaFiles.length === 0
-                            text: "Медиатека пуста. Нажми «+ Импортировать» и выбери файлы на диске."
+                            text: "Медиатека пуста. Импортируй файлы, затем перетащи их на дорожку."
                             color: theme.muted
                             font.family: "monospace"
-                            font.pixelSize: 12 * root.uiFontScale / 100
+                            font.pixelSize: 12
                             wrapMode: Text.WordWrap
                         }
                     }
