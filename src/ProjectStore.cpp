@@ -105,6 +105,48 @@ bool ProjectStore::openProject(const QString &path)
     return true;
 }
 
+QVariantList ProjectStore::projectMedia(const QString &path) const
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    const QJsonObject project = QJsonDocument::fromJson(file.readAll()).object();
+    QVariantList result;
+    const QJsonArray media = project.value("media").toArray();
+    for (const QJsonValue &entry : media) {
+        if (entry.isObject()) result.append(entry.toObject().toVariantMap());
+    }
+    return result;
+}
+
+bool ProjectStore::saveProjectMedia(const QString &path, const QVariantList &media)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        m_lastError = file.errorString();
+        return false;
+    }
+    QJsonObject project = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+    if (project.value("format").toString() != "cutrix-project") {
+        m_lastError = "Этот файл не является проектом Cutrix.";
+        return false;
+    }
+    QJsonArray array;
+    for (const QVariant &item : media) array.append(QJsonObject::fromVariantMap(item.toMap()));
+    project.insert("media", array);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        m_lastError = file.errorString();
+        return false;
+    }
+    if (file.write(QJsonDocument(project).toJson(QJsonDocument::Indented)) < 0) {
+        m_lastError = file.errorString();
+        file.close();
+        return false;
+    }
+    file.close();
+    return true;
+}
+
 bool ProjectStore::removeRecentProject(const QString &path)
 {
     QSettings settings;
