@@ -14,6 +14,7 @@ public:
     Q_INVOKABLE int savedFontScale() const;
     Q_INVOKABLE void saveAppearance(const QString &theme, int fontScale);
     Q_INVOKABLE QVariantList recentProjects() const;
+    Q_INVOKABLE QString chooseProjectSavePath(const QString &suggestedName);
     Q_INVOKABLE bool createProject(const QString &path, const QString &name,
                                    const QString &resolution, int fps);
     Q_INVOKABLE bool openProject(const QString &path);
