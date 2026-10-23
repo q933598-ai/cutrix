@@ -371,30 +371,27 @@ ApplicationWindow {
         interval: 33
         repeat: true
         onTriggered: {
-            root.timelinePosition = Math.min(root.timelineDuration, root.timelinePosition + interval / 1000)
+            if (root.timelineDuration <= 0) {
+                stop()
+                mediaPlayer.pause()
+                return
+            }
+            // Позиция монтажа — единые часы. Не привязываем её к позиции
+            // отдельного MediaPlayer: иначе смена клипа или пауза на пустом
+            // участке останавливает весь монтаж.
+            root.timelinePosition = Math.min(root.timelineDuration,
+                                             root.timelinePosition + interval / 1000)
             if (root.timelinePosition >= root.timelineDuration) {
                 root.timelinePosition = root.timelineDuration
                 stop()
                 mediaPlayer.pause()
                 return
             }
+            root.updateTimelinePreview(root.timelinePosition)
             var clip = root.timelineVideoAt(root.timelinePosition)
-            if (!clip) {
-                mediaPlayer.pause()
-                root.timelinePreviewUrl = ""
-                root.timelineSeekPending = -1
-                return
-            }
-            if (String(clip.url) !== String(root.timelinePreviewUrl)) {
-                root.updateTimelinePreview(root.timelinePosition)
-                return
-            }
-            // Синхронизируем таймлайн с реальным временем воспроизведения.
-            var actualPosition = Number(clip.start || 0) + mediaPlayer.position / 1000
-            if (Math.abs(actualPosition - root.timelinePosition) > 0.15)
-                root.timelinePosition = Math.min(root.timelineDuration, actualPosition)
-            if (mediaPlayer.playbackState !== MediaPlayer.PlayingState
-                    && mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia)
+            if (clip && mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
+                    && mediaPlayer.playbackState !== MediaPlayer.PlayingState
+                    && root.timelineSeekPending < 0)
                 mediaPlayer.play()
         }
     }
@@ -1214,16 +1211,27 @@ ApplicationWindow {
                                                 cursorShape: Qt.SizeAllCursor
                                                 drag.target: timelineClip
                                                 drag.axis: Drag.XAxis
+                                                drag.minimumX: 0
+                                                drag.maximumX: Math.max(0, timelineTrack.width - timelineClip.width)
                                                 onReleased: {
                                                     var updated = root.mediaFiles.slice()
                                                     var movingIndex = -1
+                                                    // Ищем именно этот экземпляр клипа, а не первый файл
+                                                    // с таким URL: один источник можно использовать несколько раз.
                                                     for (var i = 0; i < updated.length; ++i) {
-                                                        if (String(updated[i].url) === String(timelineClip.modelData.url)) {
+                                                        if (String(updated[i].url) === String(timelineClip.modelData.url)
+                                                                && Number(updated[i].track) === Number(timelineClip.modelData.track)
+                                                                && Number(updated[i].start || 0) === Number(timelineClip.modelData.start || 0)
+                                                                && String(updated[i].name) === String(timelineClip.modelData.name)) {
                                                             movingIndex = i
                                                             break
                                                         }
                                                     }
-                                                    if (movingIndex < 0) return
+                                                    if (movingIndex < 0) {
+                                                        timelineClip.x = Math.max(0, Number(timelineClip.modelData.start || 0) * 3)
+                                                        root.statusMessage = "Не удалось найти клип в проекте"
+                                                        return
+                                                    }
                                                     var newStart = Math.max(0, Math.round(timelineClip.x / 3))
                                                     var movingDuration = Number(updated[movingIndex].duration || 36)
                                                     var collision = updated.some(function(item, index) {
