@@ -17,6 +17,8 @@ public:
     Q_INVOKABLE bool createProject(const QString &path, const QString &name,
                                    const QString &resolution, int fps);
     Q_INVOKABLE bool openProject(const QString &path);
+    Q_INVOKABLE QVariantList projectMedia(const QString &path) const;
+    Q_INVOKABLE bool saveProjectMedia(const QString &path, const QVariantList &media);
     Q_INVOKABLE bool removeRecentProject(const QString &path);
     Q_INVOKABLE QString lastError() const;
 
