@@ -1002,13 +1002,22 @@ ApplicationWindow {
         title: "О Cutrix"
         modal: true
         anchors.centerIn: parent
+        width: 390
         standardButtons: Dialog.Ok
-        contentItem: Text {
-            text: "Cutrix 0.1.0\nПиксельный видеоредактор для Linux.\nЭто UI-прототип; видеодвижок ещё не подключён."
-            color: theme.text
-            font.family: "monospace"
-            wrapMode: Text.WordWrap
-            padding: 12
+        // Keep a fixed content width so wrapped text does not feed back into
+        // Dialog.implicitWidth and trigger a QML binding loop.
+        contentItem: Item {
+            implicitWidth: 360
+            implicitHeight: aboutText.implicitHeight + 24
+            Text {
+                id: aboutText
+                anchors.fill: parent
+                anchors.margins: 12
+                text: "Cutrix 0.1.0\\nПиксельный видеоредактор для Linux.\\nЭто UI-прототип; видеодвижок ещё не подключён."
+                color: theme.text
+                font.family: "monospace"
+                wrapMode: Text.WordWrap
+            }
         }
         background: Rectangle { color: theme.panel; border.color: theme.border }
     }
