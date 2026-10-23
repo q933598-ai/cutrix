@@ -396,7 +396,8 @@ ApplicationWindow {
                         && String(currentClip.url) === String(root.timelinePreviewUrl)
                         && Number(currentClip.start || 0) === Number(root.timelinePreviewClipStart)
                         && (mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
-                            || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia)) {
+                            || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia
+                            || mediaPlayer.mediaStatus === MediaPlayer.EndOfMedia)) {
                     var seekTarget = root.timelineSeekPending * 1000
                     mediaPlayer.position = seekTarget
                     root.timelineSeekPending = -1
@@ -451,7 +452,9 @@ ApplicationWindow {
             if (source.toString() !== "") root.statusMessage = "Загружаю видео: " + root.selectedMedia
         }
         onMediaStatusChanged: {
-            if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
+            if (mediaStatus === MediaPlayer.LoadedMedia
+                    || mediaStatus === MediaPlayer.BufferedMedia
+                    || mediaStatus === MediaPlayer.EndOfMedia) {
                 if (root.timelineSeekPending >= 0) {
                     mediaPlayer.position = root.timelineSeekPending * 1000
                     root.timelineSeekPending = -1
@@ -1344,7 +1347,8 @@ ApplicationWindow {
                                                         track: targetTrack
                                                     })
                                                     root.mediaFiles = updated
-                                                    root.saveTimelineMedia(updated)
+                                                    if (root.currentProjectPath !== "")
+                                                        projectStore.saveProjectMedia(root.currentProjectPath, updated)
                                                 }
                                             }
                                         }
