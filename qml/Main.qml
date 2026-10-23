@@ -1178,8 +1178,8 @@ ApplicationWindow {
                                         delegate: Rectangle {
                                             id: timelineClip
                                             required property var modelData
-                                            x: Math.max(0, Number(modelData.start || 0) * timelineScale)
-                                            width: Math.max(3, Number(modelData.duration || 36) * timelineScale)
+                                            x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
+                                            width: Math.max(3, Number(modelData.duration || 36) * timelineCanvas.timelineScale)
                                             height: 30
                                             y: 2
                                             clip: true
