@@ -58,6 +58,27 @@ ApplicationWindow {
         candidates.sort(function(a, b) { return Number(b.track) - Number(a.track) })
         return candidates[0]
     }
+    function selectMedia(name) {
+        timelinePlaybackTimer.stop()
+        mediaPlayer.pause()
+        timelinePreviewActive = false
+        timelinePreviewUrl = ""
+        timelineSeekPending = -1
+        selectedMedia = name
+        statusMessage = "Выбран файл: " + name
+    }
+
+    function previewSelectedMedia() {
+        if (selectedMediaUrl === "") return
+        timelinePlaybackTimer.stop()
+        timelinePreviewActive = false
+        timelinePreviewUrl = ""
+        timelineSeekPending = -1
+        mediaPlayer.source = selectedMediaUrl
+        mediaPlayer.play()
+        statusMessage = "Предпросмотр файла: " + selectedMedia
+    }
+
     function updateTimelinePreview(seconds) {
         var clip = timelineVideoAt(seconds)
         timelinePreviewActive = true
@@ -789,7 +810,7 @@ ApplicationWindow {
                         GridLayout {
                             id: mediaGrid
                             width: Math.max(0, parent.width)
-                            columns: 3
+                            columns: width >= 300 ? 3 : width >= 190 ? 2 : 1
                             columnSpacing: 5
                             rowSpacing: 5
                             Repeater {
@@ -868,7 +889,7 @@ ApplicationWindow {
                                     target: null
                                     onActiveChanged: {
                                         if (active) {
-                                            root.selectedMedia = mediaCard.modelData.name
+                                            root.selectMedia(mediaCard.modelData.name)
                                             root.statusMessage = "Перетаскиваю: " + mediaCard.modelData.name
                                         } else {
                                             mediaCard.Drag.drop()
@@ -876,7 +897,7 @@ ApplicationWindow {
                                     }
                                 }
                                 TapHandler {
-                                    onTapped: root.selectedMedia = mediaCard.modelData.name
+                                    onTapped: root.selectMedia(mediaCard.modelData.name)
                                 }
                             }
                         }
@@ -962,7 +983,14 @@ ApplicationWindow {
                         Text { text: mediaPlayer.position >= 0 ? Qt.formatTime(mediaPlayer.position / 1000, "mm:ss") + " / " + Qt.formatTime(mediaPlayer.duration / 1000, "mm:ss") : "00:00 / 00:00"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                         Item { Layout.fillWidth: true }
                         Button {
-                            text: timelinePlaybackTimer.running ? "Ⅱ Пауза монтажа" : "▶ Предпросмотр монтажа"
+                            text: "▶ Файл"
+                            enabled: root.selectedMediaUrl !== ""
+                            onClicked: root.previewSelectedMedia()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                        }
+                        Button {
+                            text: timelinePlaybackTimer.running ? "Ⅱ Монтаж" : "▶ Монтаж"
                             enabled: root.timelineDuration > 0 || root.selectedMediaUrl !== ""
                             onClicked: {
                                 if (timelinePlaybackTimer.running) {
