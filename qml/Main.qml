@@ -585,7 +585,8 @@ ApplicationWindow {
                         root.pendingProjectName = projectNameField.text.trim()
                         root.pendingResolution = resolutionBox.currentText
                         root.pendingFps = parseInt(fpsBox.currentText)
-                        projectSaveDialog.currentFile = "file://" + StandardPaths.writableLocation(StandardPaths.DocumentsLocation) + "/" + root.pendingProjectName.replace(/[^a-zA-Z0-9а-яА-Я _-]/g, "_") + ".cutrix"
+                        // Set the initial folder separately; pre-setting currentFile can crash Qt Quick Dialogs on some Qt 6 builds.
+                        projectSaveDialog.currentFolder = Qt.resolvedUrl(StandardPaths.writableLocation(StandardPaths.DocumentsLocation) + "/")
                         projectSaveDialog.open()
                     }
                     palette.buttonText: theme.background
