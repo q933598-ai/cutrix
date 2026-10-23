@@ -1145,7 +1145,7 @@ ApplicationWindow {
                 id: aboutText
                 anchors.fill: parent
                 anchors.margins: 12
-                text: "Cutrix 0.1.0\\nПиксельный видеоредактор для Linux.\\nЭто UI-прототип; видеодвижок ещё не подключён."
+                text: "Cutrix 0.1.0\\nПиксельный видеоредактор для Linux.\\nЭкспорт MP4 через FFmpeg; некоторые функции монтажа ещё в разработке."
                 color: theme.text
                 font.family: "monospace"
                 wrapMode: Text.WordWrap
