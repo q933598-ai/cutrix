@@ -14,6 +14,8 @@ qt_add_executable(cutrix
     src/ProjectStore.h
     src/MediaTools.cpp
     src/MediaTools.h
+    src/ExportController.cpp
+    src/ExportController.h
 )
 
 qt_add_qml_module(cutrix
