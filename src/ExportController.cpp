@@ -11,10 +11,6 @@
 #include <cmath>
 
 namespace {
-constexpr int kOutputWidth = 1920;
-constexpr int kOutputHeight = 1080;
-constexpr int kOutputFps = 30;
-
 QString localPath(const QString &value)
 {
     const QUrl url(value);
@@ -109,7 +105,7 @@ ExportController::ExportController(QObject *parent)
             this, &ExportController::handleProcessError);
 }
 
-bool ExportController::startExport(const QVariantList &timelineItems, const QString &outputUrl)
+bool ExportController::startExport(const QVariantList &timelineItems, const QString &outputUrl,\n                                   int width, int height, int fps)
 {
     if (m_running || m_process.state() != QProcess::NotRunning) {
         emit statusChanged(QStringLiteral("Экспорт уже выполняется"));
@@ -120,7 +116,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         return false;
     }
 
-    m_outputPath = localPath(outputUrl).trimmed();
+    m_outputWidth = qBound(320, width > 0 ? width : 1920, 3840);\n    m_outputHeight = qBound(240, height > 0 ? height : 1080, 2160);\n    if (m_outputWidth % 2 != 0) --m_outputWidth;\n    if (m_outputHeight % 2 != 0) --m_outputHeight;\n    m_outputFps = qBound(1, fps > 0 ? fps : 30, 120);\n\n    m_outputPath = localPath(outputUrl).trimmed();
     if (m_outputPath.isEmpty()) {
         emit exportFailed(QStringLiteral("Не указан путь для экспорта"));
         return false;
@@ -205,7 +201,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
     for (const Clip &clip : inputClips) {
         if (clip.kind == QStringLiteral("image")) {
             m_baseArguments << QStringLiteral("-loop") << QStringLiteral("1")
-                            << QStringLiteral("-framerate") << QString::number(kOutputFps)
+                            << QStringLiteral("-framerate") << QString::number(m_outputFps)
                             << QStringLiteral("-t") << number(clip.duration)
                             << QStringLiteral("-i") << clip.path;
         } else {
@@ -215,7 +211,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
 
     QStringList filters;
     filters << QStringLiteral("color=c=black:s=%1x%2:r=%3:d=%4,format=yuv420p[base0]")
-                   .arg(kOutputWidth).arg(kOutputHeight).arg(kOutputFps)
+                   .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
                    .arg(number(m_timelineDuration));
 
     QVector<Clip> visuals;
@@ -246,7 +242,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                  "pad=%3:%4:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
                                  "tpad=stop_mode=clone:stop_duration=%5,trim=duration=%5,"
                                  "setpts=PTS-STARTPTS+%6/TB[%7]")
-                       .arg(clip.inputIndex).arg(kOutputFps).arg(kOutputWidth).arg(kOutputHeight)
+                       .arg(clip.inputIndex).arg(m_outputFps).arg(m_outputWidth).arg(m_outputHeight)
                        .arg(number(clip.duration)).arg(number(clip.start)).arg(label);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
@@ -316,7 +312,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
     m_baseArguments << QStringLiteral("-filter_complex") << m_filterGraph
                     << QStringLiteral("-map") << QStringLiteral("[vout]")
                     << QStringLiteral("-map") << QStringLiteral("[aout]")
-                    << QStringLiteral("-r") << QString::number(kOutputFps)
+                    << QStringLiteral("-r") << QString::number(m_outputFps)
                     << QStringLiteral("-pix_fmt") << QStringLiteral("yuv420p")
                     << QStringLiteral("-t") << number(m_timelineDuration)
                     << QStringLiteral("-c:a") << QStringLiteral("aac")
