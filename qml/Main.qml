@@ -709,25 +709,23 @@ ApplicationWindow {
                                         color: theme.panelAlt
                                         clip: true
                                         Image {
+                                            id: mediaThumbnail
                                             anchors.fill: parent
-                                            source: /\.(png|jpe?g|webp|bmp|gif)$/i.test(mediaCard.modelData.name) ? mediaCard.modelData.url : ""
+                                            source: mediaTools.thumbnail(mediaCard.modelData.url)
                                             fillMode: Image.PreserveAspectCrop
-                                            visible: source.toString() !== ""
+                                            asynchronous: true
+                                            cache: true
                                         }
-                                        Canvas {
-                                            anchors.fill: parent
-                                            visible: /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(mediaCard.modelData.name)
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.clearRect(0,0,width,height)
-                                                ctx.fillStyle = theme.panelAlt
-                                                ctx.fillRect(0,0,width,height)
-                                                ctx.fillStyle = theme.green
-                                                for (var x=3; x<width-3; x+=5) {
-                                                    var h = 5 + ((x*17 + mediaCard.modelData.name.length*13)%29)
-                                                    ctx.fillRect(x,(height-h)/2,3,h)
-                                                }
-                                            }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: mediaThumbnail.status !== Image.Ready
+                                            text: mediaCard.modelData.missing ? "ФАЙЛ НЕ НАЙДЕН" :
+                                                  mediaCard.modelData.kind === "audio" ? "♫\nАУДИО" :
+                                                  mediaCard.modelData.kind === "image" ? "ИЗОБРАЖЕНИЕ" : "НЕТ\nПРЕВЬЮ"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            color: theme.muted
+                                            font.pixelSize: 12
+                                            font.family: "monospace"
                                         }
                                         Text {
                                             anchors.centerIn: parent
@@ -741,7 +739,7 @@ ApplicationWindow {
                                             anchors.left: parent.left
                                             anchors.bottom: parent.bottom
                                             anchors.margins: 4
-                                            text: /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(mediaCard.modelData.name) ? "AUDIO" : /\.(png|jpe?g|webp|bmp|gif)$/i.test(mediaCard.modelData.name) ? "IMAGE" : "VIDEO"
+                                            text: mediaCard.modelData.kind ? mediaCard.modelData.kind.toUpperCase() : "MEDIA"
                                             color: theme.text
                                             font.family: "monospace"
                                             font.pixelSize: 9
@@ -791,7 +789,7 @@ ApplicationWindow {
                         }
                     }
                     Item { Layout.fillHeight: true }
-                    Text { text: "Демо-элементы · не реальные файлы"; color: theme.muted; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
+                    Text { text: "Миниатюры видео создаются через FFmpeg; для аудио показана карточка файла."; color: theme.muted; font.family: "monospace"; font.pixelSize: (11 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
                 }
             }
 
@@ -825,34 +823,33 @@ ApplicationWindow {
                             visible: true
                         }
 
-                        Canvas {
+                        Rectangle {
                             anchors.fill: parent
                             visible: !mediaPlayer.hasVideo
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
-                                var sky = ctx.createLinearGradient(0, 0, 0, height)
-                                sky.addColorStop(0, "#171c55")
-                                sky.addColorStop(0.55, "#583e9c")
-                                sky.addColorStop(1, "#152f59")
-                                ctx.fillStyle = sky
-                                ctx.fillRect(0, 0, width, height)
-                                ctx.fillStyle = "#d9b8ff"
-                                ctx.beginPath()
-                                ctx.arc(width * 0.76, height * 0.22, Math.min(width, height) * 0.055, 0, Math.PI * 2)
-                                ctx.fill()
-                                for (var i = 0; i < 28; i++) {
-                                    var bx = i * width / 27
-                                    var bw = width / 35 + (i % 3) * 4
-                                    var bh = height * (0.12 + ((i * 17) % 37) / 100)
-                                    ctx.fillStyle = ["#18284f", "#223a70", "#2d3979"][i % 3]
-                                    ctx.fillRect(bx, height * 0.76 - bh, bw, bh)
-                                    ctx.fillStyle = "#ff9acb"
-                                    for (var wy = height * 0.76 - bh + 7; wy < height * 0.76 - 3; wy += 10)
-                                        if ((i + Math.floor(wy)) % 3 === 0) ctx.fillRect(bx + 4, wy, 3, 4)
+                            color: theme.background
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 8
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: "◆ CUTRIX"
+                                    color: theme.accent
+                                    font.family: "monospace"
+                                    font.pixelSize: 22
+                                    font.bold: true
                                 }
-                                ctx.fillStyle = "#0b1830"
-                                ctx.fillRect(0, height * 0.82, width, height * 0.18)
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: root.selectedMedia === "" ? "ИМПОРТИРУЙ МЕДИА" :
+                                          mediaPlayer.errorString !== "" ? mediaPlayer.errorString :
+                                          mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia ? "ЗАГРУЗКА МЕДИА…" :
+                                          mediaPlayer.mediaStatus === MediaPlayer.InvalidMedia ? "НЕ УДАЛОСЬ ПРОЧИТАТЬ ФАЙЛ" :
+                                          "НАЖМИ «ВОСПРОИЗВЕСТИ»"
+                                    color: theme.muted
+                                    font.family: "monospace"
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                }
                             }
                         }
 
