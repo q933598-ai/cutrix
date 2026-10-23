@@ -386,8 +386,8 @@ ApplicationWindow {
                                             anchors.centerIn: parent
                                             text: {
                                                 var n = modelData.name.toLowerCase()
-                                                if (/\\.(mp3|wav|flac|ogg|m4a)$/.test(n)) return "♫"
-                                                if (/\\.(png|jpe?g|webp|bmp|gif)$/.test(n)) return "▧"
+                                                if (/\.(mp3|wav|flac|ogg|m4a)$/.test(n)) return "♫"
+                                                if (/\.(png|jpe?g|webp|bmp|gif)$/.test(n)) return "▧"
                                                 return "▶"
                                             }
                                             color: theme.accent
