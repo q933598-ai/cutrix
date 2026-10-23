@@ -334,7 +334,59 @@ ApplicationWindow {
             Text { text: "РАЗРЕШЕНИЕ"; color: theme.muted; font.family: "monospace" }
             ComboBox { id: resolutionBox; Layout.fillWidth: true; model: ["1920×1080", "2560×1440", "3840×2160", "1280×720"]; currentIndex: 0; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
             Text { text: "ЧАСТОТА КАДРОВ"; color: theme.muted; font.family: "monospace" }
-            ComboBox { id: fpsBox; Layout.fillWidth: true; model: ["24 FPS", "25 FPS", "30 FPS", "50 FPS", "60 FPS"]; currentIndex: 2; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            ComboBox {
+                id: fpsBox
+                Layout.fillWidth: true
+                model: ["24 FPS", "25 FPS", "30 FPS", "50 FPS", "60 FPS"]
+                currentIndex: 2
+                palette.text: theme.text
+                palette.window: theme.panel
+                palette.base: theme.panel
+                palette.highlight: theme.panelAlt
+                palette.highlightedText: theme.accent
+                contentItem: Text {
+                    leftPadding: 8
+                    rightPadding: 28
+                    text: fpsBox.displayText
+                    color: theme.text
+                    font.family: "monospace"
+                    verticalAlignment: Text.AlignVCenter
+                }
+                indicator: Text {
+                    x: fpsBox.width - width - 10
+                    y: (fpsBox.height - height) / 2
+                    text: "▼"
+                    color: theme.accent
+                    font.pixelSize: 10
+                }
+                background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 }
+                delegate: ItemDelegate {
+                    width: fpsBox.width
+                    contentItem: Text {
+                        text: modelData
+                        color: highlighted ? theme.accent : theme.text
+                        font.family: "monospace"
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    highlighted: fpsBox.highlightedIndex === index
+                    background: Rectangle {
+                        color: parent.highlighted ? theme.panelAlt : theme.panel
+                        border.color: parent.highlighted ? theme.accent : theme.border
+                    }
+                }
+                popup: Popup {
+                    y: fpsBox.height
+                    width: fpsBox.width
+                    padding: 1
+                    contentItem: ListView {
+                        clip: true
+                        implicitHeight: contentHeight
+                        model: fpsBox.delegateModel
+                        currentIndex: fpsBox.highlightedIndex
+                    }
+                    background: Rectangle { color: theme.panel; border.color: theme.accent; border.width: 1 }
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Button { text: "ОТМЕНА"; onClicked: newProjectDialog.close(); palette.buttonText: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
