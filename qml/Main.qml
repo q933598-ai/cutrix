@@ -1385,14 +1385,14 @@ ApplicationWindow {
                                 onPressed: function(mouse) {
                                     var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
                                     if (root.timelineDuration > 0 && timelineCanvas.width > 0) {
-                                        root.timelinePosition = Math.max(0, Math.min(root.timelineDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale))
+                                        root.timelinePosition = Math.max(0, Math.min(root.timelineDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale)))
                                         root.updateTimelinePreview(root.timelinePosition)
                                     }
                                 }
                                 onPositionChanged: function(mouse) {
                                     if (pressed && root.timelineDuration > 0 && timelineCanvas.width > 0) {
                                         var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
-                                        root.timelinePosition = (Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * root.timelineDuration
+                                        root.timelinePosition = Math.max(0, Math.min(root.timelineDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale)))
                                         root.updateTimelinePreview(root.timelinePosition)
                                     }
                                 }
