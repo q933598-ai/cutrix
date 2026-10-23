@@ -415,8 +415,11 @@ ApplicationWindow {
                     return
                 }
                 if (mediaPlayer.playbackState === MediaPlayer.PlayingState) {
-                    // The decoder is the clock while video is playing.
-                    root.timelinePosition = Number(currentClip.start || 0) + mediaPlayer.position / 1000
+                    // Keep the montage playhead moving independently from the decoder.
+                    // At EndOfMedia, Qt can leave position at the end of the current file;
+                    // using that position as the timeline clock traps playback on one clip.
+                    root.timelinePosition = Math.min(root.timelineDuration,
+                                                     root.timelinePosition + interval / 1000)
                 } else {
                     mediaPlayer.play()
                     return
