@@ -557,7 +557,7 @@ ApplicationWindow {
             }
 
             for (var audioIndex = 0; audioIndex < timelineAudioPlayers.count; ++audioIndex) {
-                var audioPlayer = timelineAudioPlayers.itemAt(audioIndex)
+                var audioPlayer = timelineAudioPlayers.objectAt(audioIndex)
                 if (audioPlayer) audioPlayer.syncToTimeline()
             }
             var currentClip = root.timelineVideoAt(root.timelinePosition)
@@ -614,7 +614,7 @@ ApplicationWindow {
         }
     }
 
-    Repeater {
+    Instantiator {
         id: timelineAudioPlayers
         model: root.mediaFiles.filter(function(item) {
             return item.kind === "audio" && (Number(item.track) === 2 || Number(item.track) === 3)
