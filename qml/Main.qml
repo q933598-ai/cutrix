@@ -118,11 +118,11 @@ ApplicationWindow {
             timelinePreviewClipStart = clipStart
             timelineSeekPending = offset
         } else if (clipStart !== Number(timelinePreviewClipStart)) {
-            // The same source may be used by consecutive clips. Treat each timeline
-            // instance as a new segment and seek to its own offset at the cut.
+            // Same source, different timeline instance: pause and perform an explicit
+            // seek before allowing the playback timer to advance the playhead.
+            mediaPlayer.pause()
             timelinePreviewClipStart = clipStart
-            mediaPlayer.position = offset * 1000
-            if (timelinePlaybackTimer.running) mediaPlayer.play()
+            timelineSeekPending = offset
         } else {
             var target = offset * 1000
             if (Math.abs(mediaPlayer.position - target) > 120) mediaPlayer.position = target
@@ -390,6 +390,19 @@ ApplicationWindow {
             }
             var currentClip = root.timelineVideoAt(root.timelinePosition)
             if (currentClip) {
+                // A seek can be pending even when the source URL did not change
+                // (two timeline clips may reference the same file).
+                if (root.timelineSeekPending >= 0
+                        && String(currentClip.url) === String(root.timelinePreviewUrl)
+                        && Number(currentClip.start || 0) === Number(root.timelinePreviewClipStart)
+                        && (mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
+                            || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia)) {
+                    var seekTarget = root.timelineSeekPending * 1000
+                    mediaPlayer.position = seekTarget
+                    root.timelineSeekPending = -1
+                    mediaPlayer.play()
+                    return
+                }
                 // Do not advance the playhead while the decoder switches to this clip.
                 // Otherwise the timeline can pass the entire clip before it starts playing.
                 if (String(currentClip.url) !== String(root.timelinePreviewUrl)
