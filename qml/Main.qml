@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtMultimedia
+import QtCore
 
 ApplicationWindow {
     id: root
@@ -14,7 +15,7 @@ ApplicationWindow {
     title: "Cutrix — Pixel Video Editor"
     color: theme.background
 
-    property string currentTheme: "Tokyo Night"
+    property string currentTheme: projectStore.savedTheme()
     property string selectedMedia: ""
     property var mediaFiles: []
     property bool isPlaying: false
@@ -25,8 +26,13 @@ ApplicationWindow {
         return ""
     }
     property bool settingsOpen: false
-    property int uiFontScale: 100
-    property string statusMessage: "Готово · UI-прототип · проект не сохранён"
+    property int uiFontScale: projectStore.savedFontScale()
+    property string currentProjectPath: ""
+    property string currentProjectName: ""
+    property string projectSearch: ""
+    property string projectSort: "Последние"
+    property var recentProjects: projectStore.recentProjects()
+    property string statusMessage: "Готово · Cutrix Project Hub"
 
     readonly property var palettes: ({
         "Tokyo Night": { background: "#101522", panel: "#171f32", panelAlt: "#1d2942", border: "#30466f", text: "#d7e2ff", muted: "#8299c9", accent: "#7aa2f7", accent2: "#bb9af7", green: "#9ece6a" },
@@ -34,7 +40,18 @@ ApplicationWindow {
         "Catppuccin": { background: "#181825", panel: "#1e1e2e", panelAlt: "#313244", border: "#45475a", text: "#cdd6f4", muted: "#a6adc8", accent: "#89b4fa", accent2: "#cba6f7", green: "#a6e3a1" },
         "Rosé Pine": { background: "#191724", panel: "#1f1d2e", panelAlt: "#26233a", border: "#403d52", text: "#e0def4", muted: "#908caa", accent: "#c4a7e7", accent2: "#ebbcba", green: "#9ccfd8" }
     })
-    readonly property var theme: palettes[currentTheme]
+    readonly property var theme: palettes[currentTheme] || palettes["Tokyo Night"]
+
+    function refreshProjects() { recentProjects = projectStore.recentProjects() }
+    function openProject(path, name) {
+        if (!projectStore.openProject(path)) { statusMessage = projectStore.lastError(); return }
+        currentProjectPath = path
+        currentProjectName = name || path.split("/").pop().replace(/\\.cutrix$/, "")
+        refreshProjects()
+        statusMessage = "Открыт проект: " + currentProjectName
+    }
+    onCurrentThemeChanged: projectStore.saveAppearance(currentTheme, uiFontScale)
+    onUiFontScaleChanged: projectStore.saveAppearance(currentTheme, uiFontScale)
 
     function fileNameFromUrl(url) {
         var value = String(url)
@@ -158,7 +175,9 @@ ApplicationWindow {
         Menu {
             title: "Файл"
             Action { text: "Импортировать медиа…"; onTriggered: importDialog.open() }
-            Action { text: "Сохранить проект (скоро)"; onTriggered: root.statusMessage = "Сохранение проекта ещё не реализовано" }
+            Action { text: "Менеджер проектов"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
+            Action { text: "Закрыть проект"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
+            Action { text: "Сохранить проект"; onTriggered: root.statusMessage = "Файл проекта сохранён; данные таймлайна появятся в следующих версиях." }
             MenuSeparator {}
             Action { text: "Выход"; onTriggered: Qt.quit() }
         }
@@ -174,6 +193,80 @@ ApplicationWindow {
         Menu {
             title: "Справка"
             Action { text: "О Cutrix"; onTriggered: aboutDialog.open() }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: root.currentProjectPath === ""
+        color: theme.background
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 26
+            spacing: 18
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "◆ CUTRIX"; color: theme.accent; font.family: "monospace"; font.bold: true; font.pixelSize: 30 }
+                Text { text: "PROJECT HUB / v0.2"; color: theme.muted; font.family: "monospace"; font.pixelSize: 13; Layout.fillWidth: true }
+                Button { text: "⚙ ТЕМА И ВИД"; onClicked: settingsDialog.open(); palette.buttonText: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            }
+            Rectangle { Layout.fillWidth: true; height: 2; color: theme.accent }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "ПРОЕКТЫ"; color: theme.text; font.family: "monospace"; font.bold: true; font.pixelSize: 19 }
+                Item { Layout.fillWidth: true }
+                TextField { Layout.preferredWidth: 230; placeholderText: "⌕ Поиск проектов..."; text: root.projectSearch; onTextChanged: root.projectSearch = text; color: theme.text; placeholderTextColor: theme.muted; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+                ComboBox { model: ["Последние", "По названию"]; currentIndex: root.projectSort === "Последние" ? 0 : 1; onActivated: root.projectSort = currentText; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button { text: "＋ НОВЫЙ ПРОЕКТ"; onClicked: { projectNameField.text = "Мой проект"; newProjectDialog.open() }; palette.buttonText: theme.background; background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 0 } }
+                Button { text: "↗ ОТКРЫТЬ ПРОЕКТ"; onClicked: projectOpenDialog.open(); palette.buttonText: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+                Item { Layout.fillWidth: true }
+                Text { text: root.recentProjects.length + " ПРОЕКТОВ"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+            Flickable {
+                Layout.fillWidth: true; Layout.fillHeight: true; contentWidth: width; contentHeight: projectGrid.implicitHeight; clip: true
+                GridLayout {
+                    id: projectGrid
+                    width: parent.width
+                    columns: width > 900 ? 4 : width > 600 ? 3 : 2
+                    columnSpacing: 14; rowSpacing: 14
+                    Repeater {
+                        model: {
+                            var items = root.recentProjects.filter(function(p) { return p.name.toLowerCase().indexOf(root.projectSearch.toLowerCase()) !== -1 })
+                            if (root.projectSort === "По названию") items.sort(function(a,b) { return a.name.localeCompare(b.name) })
+                            return items
+                        }
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true; Layout.preferredHeight: 190
+                            color: theme.panel; border.color: theme.border
+                            ColumnLayout {
+                                anchors.fill: parent; spacing: 0
+                                Rectangle {
+                                    Layout.fillWidth: true; Layout.preferredHeight: 112
+                                    color: theme.panelAlt; border.color: theme.border
+                                    Text { anchors.centerIn: parent; text: "▧"; color: theme.accent; font.family: "monospace"; font.pixelSize: 42 }
+                                    Text { anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 8; text: modelData.resolution + " · " + modelData.fps + " FPS"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.margins: 9; spacing: 4
+                                    Text { Layout.fillWidth: true; text: modelData.name; color: theme.text; font.family: "monospace"; font.bold: true; elide: Text.ElideRight }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Text { Layout.fillWidth: true; text: modelData.modified; color: theme.muted; font.family: "monospace"; font.pixelSize: 10; elide: Text.ElideRight }
+                                        Button { text: "ОТКРЫТЬ"; onClicked: root.openProject(modelData.path, modelData.name); palette.buttonText: theme.accent; background: Rectangle { color: theme.background; border.color: theme.border; radius: 0 } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Text { Layout.fillWidth: true; visible: root.recentProjects.length === 0; text: "ПОКА НЕТ ПРОЕКТОВ\n\nСоздай новый проект или открой файл .cutrix. Список недавних проектов сохранится между запусками."; color: theme.muted; font.family: "monospace"; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter }
+            Text { text: root.statusMessage; color: theme.muted; font.family: "monospace"; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
         }
     }
 
@@ -197,6 +290,76 @@ ApplicationWindow {
                 root.statusMessage = "Видео загружено: " + root.selectedMedia
             else if (mediaStatus === MediaPlayer.InvalidMedia)
                 root.statusMessage = "Не удалось открыть видео. Проверь формат и кодеки."
+        }
+    }
+
+    property string pendingProjectName: ""
+    property string pendingResolution: "1920×1080"
+    property int pendingFps: 30
+
+    Dialog {
+        id: newProjectDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        width: 470
+        title: "НОВЫЙ ПРОЕКТ"
+        standardButtons: Dialog.NoButton
+        background: Rectangle { color: theme.background; border.color: theme.accent; border.width: 2; radius: 0 }
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text { text: "◆ СОЗДАНИЕ ПРОЕКТА"; color: theme.accent; font.family: "monospace"; font.bold: true; font.pixelSize: 16 }
+            TextField { id: projectNameField; Layout.fillWidth: true; placeholderText: "Название проекта"; text: "Мой проект"; color: theme.text; placeholderTextColor: theme.muted; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            Text { text: "РАЗРЕШЕНИЕ"; color: theme.muted; font.family: "monospace" }
+            ComboBox { id: resolutionBox; Layout.fillWidth: true; model: ["1920×1080", "2560×1440", "3840×2160", "1280×720"]; currentIndex: 0; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            Text { text: "ЧАСТОТА КАДРОВ"; color: theme.muted; font.family: "monospace" }
+            ComboBox { id: fpsBox; Layout.fillWidth: true; model: ["24 FPS", "25 FPS", "30 FPS", "50 FPS", "60 FPS"]; currentIndex: 2; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+            RowLayout {
+                Layout.fillWidth: true
+                Button { text: "ОТМЕНА"; onClicked: newProjectDialog.close(); palette.buttonText: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "СОЗДАТЬ И СОХРАНИТЬ"
+                    onClicked: {
+                        if (projectNameField.text.trim() === "") { root.statusMessage = "Введи название проекта"; return }
+                        root.pendingProjectName = projectNameField.text.trim()
+                        root.pendingResolution = resolutionBox.currentText
+                        root.pendingFps = parseInt(fpsBox.currentText)
+                        projectSaveDialog.currentFile = "file://" + StandardPaths.writableLocation(StandardPaths.DocumentsLocation) + "/" + root.pendingProjectName.replace(/[^a-zA-Z0-9а-яА-Я _-]/g, "_") + ".cutrix"
+                        projectSaveDialog.open()
+                    }
+                    palette.buttonText: theme.background
+                    background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 0 }
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: projectSaveDialog
+        title: "Сохранить проект Cutrix"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Проект Cutrix (*.cutrix)"]
+        onAccepted: {
+            var path = selectedFile.toString()
+            if (path.startsWith("file://")) path = decodeURIComponent(path.substring(7))
+            if (!path.endsWith(".cutrix")) path += ".cutrix"
+            if (projectStore.createProject(path, root.pendingProjectName, root.pendingResolution, root.pendingFps)) {
+                root.openProject(path, root.pendingProjectName)
+                newProjectDialog.close()
+            } else root.statusMessage = projectStore.lastError()
+        }
+    }
+
+    FileDialog {
+        id: projectOpenDialog
+        title: "Открыть проект Cutrix"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["Проект Cutrix (*.cutrix)", "Все файлы (*)"]
+        onAccepted: {
+            var path = selectedFile.toString()
+            if (path.startsWith("file://")) path = decodeURIComponent(path.substring(7))
+            root.openProject(path, "")
         }
     }
 
@@ -322,6 +485,7 @@ ApplicationWindow {
     }
 
     ColumnLayout {
+        visible: root.currentProjectPath !== ""
         anchors.fill: parent
         anchors.margins: 8
         spacing: 7
@@ -726,6 +890,7 @@ ApplicationWindow {
     }
 
     footer: Rectangle {
+        visible: root.currentProjectPath !== ""
         implicitHeight: 26
         color: theme.background
         RowLayout {
