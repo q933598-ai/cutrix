@@ -1,4 +1,4 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QCoreApplication>
@@ -8,7 +8,7 @@
 
 int main(int argc, char *argv[])
 {
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
 
     QGuiApplication::setApplicationName("Cutrix");
     QGuiApplication::setApplicationVersion("0.1.0");
