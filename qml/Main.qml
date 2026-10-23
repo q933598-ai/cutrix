@@ -35,6 +35,8 @@ ApplicationWindow {
     property string statusMessage: "Готово · Cutrix Project Hub"
     property int mediaPanelWidth: 255
     property real timelinePosition: 0
+    // Все элементы таймлайна используют один масштаб, чтобы линейка,
+    // клипы и ползунок совпадали по времени.
     property real timelineDuration: {
         var end = 0
         for (var i = 0; i < mediaFiles.length; ++i) {
@@ -1128,6 +1130,11 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
+                        // Подгоняем весь проект под видимую ширину. Линейка,
+                        // клипы, перетаскивание и playhead используют этот масштаб.
+                        property real timelineScale: width > 0
+                            ? width / Math.max(root.timelineDuration, 35)
+                            : 1
                         Column {
                             anchors.fill: parent
                             spacing: 3
@@ -1142,7 +1149,7 @@ ApplicationWindow {
                                         delegate: Text {
                                             required property int index
                                             width: parent.width / 7
-                                            text: "00:" + (index * 5).toString().padStart(2, "0")
+                                            text: root.formatTime(root.timelineDuration * index / 6)
                                             color: theme.muted
                                             font.family: "monospace"
                                             font.pixelSize: (12 * root.uiFontScale / 100)
@@ -1171,8 +1178,8 @@ ApplicationWindow {
                                         delegate: Rectangle {
                                             id: timelineClip
                                             required property var modelData
-                                            x: Math.max(0, Number(modelData.start || 0) * 3)
-                                            width: Math.max(3, Number(modelData.duration || 36) * 3)
+                                            x: Math.max(0, Number(modelData.start || 0) * timelineScale)
+                                            width: Math.max(3, Number(modelData.duration || 0) * timelineScale)
                                             height: 30
                                             y: 2
                                             clip: true
@@ -1189,7 +1196,7 @@ ApplicationWindow {
                                                         width: 54
                                                         height: parent.height
                                                         source: mediaTools.thumbnailAt(timelineClip.modelData.url,
-                                                            Math.max(0, Number(timelineClip.modelData.start || 0) + index * 18))
+                                                            Math.max(0, Number(timelineClip.modelData.start || 0) + index * (54 / Math.max(0.001, timelineCanvas.timelineScale))))
                                                         fillMode: Image.PreserveAspectCrop
                                                         asynchronous: true
                                                         opacity: 0.7
@@ -1264,7 +1271,7 @@ ApplicationWindow {
                                                     }
 
                                                     var duration = Math.max(1, Number(updated[movingIndex].duration || 36))
-                                                    var desiredStart = Math.max(0, Math.round(timelineClip.x / 3))
+                                                    var desiredStart = Math.max(0, Math.round(timelineClip.x / Math.max(0.001, timelineCanvas.timelineScale)))
                                                     var trackIndex = Number(updated[movingIndex].track)
                                                     var obstacles = updated.filter(function(item, index) {
                                                         return index !== movingIndex && Number(item.track) === trackIndex
@@ -1299,7 +1306,7 @@ ApplicationWindow {
                                                     updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: desiredStart })
                                                     root.mediaFiles = updated
                                                     root.saveTimelineMedia(updated)
-                                                    timelineClip.x = desiredStart * 3
+                                                    timelineClip.x = desiredStart * timelineCanvas.timelineScale
                                                 }
                                             }
                                         }
@@ -1320,7 +1327,7 @@ ApplicationWindow {
                                                 if (String(updated[i].url) === String(url)) {
                                                     updated[i] = Object.assign({}, updated[i], {
                                                         track: timelineTrack.index,
-                                                        start: Math.max(0, Math.round(drop.x / 3)),
+                                                        start: Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale))),
                                                         duration: updated[i].duration || 36
                                                     })
                                                     found = true
@@ -1356,7 +1363,7 @@ ApplicationWindow {
                         }
                         Rectangle {
                             id: timelinePlayhead
-                            x: root.timelineDuration > 0 ? Math.min(timelineCanvas.width - width, (root.timelinePosition / root.timelineDuration) * timelineCanvas.width) : 0
+                            x: Math.max(0, Math.min(timelineCanvas.width - width, root.timelinePosition * timelineCanvas.timelineScale))
                             y: 20
                             width: 2
                             height: Math.max(0, timelineCanvas.height - 20)
@@ -1378,7 +1385,7 @@ ApplicationWindow {
                                 onPressed: function(mouse) {
                                     var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
                                     if (root.timelineDuration > 0 && timelineCanvas.width > 0) {
-                                        root.timelinePosition = (Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * root.timelineDuration
+                                        root.timelinePosition = Math.max(0, Math.min(root.timelineDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale))
                                         root.updateTimelinePreview(root.timelinePosition)
                                     }
                                 }
