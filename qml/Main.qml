@@ -701,14 +701,14 @@ ApplicationWindow {
             var start = Math.max(0, root.timelinePosition)
             var duration = 5
             // Titles live on V2, above V1 footage.
-            start = root.findFreeTimelineStart(0, start, duration, "")
+            start = root.findFreeTimelineStart(4, start, duration, "")
             updated.push({
                 clipId: root.createTimelineClipId(),
                 name: "Текст: " + value.substring(0, 24),
                 text: value,
                 url: "",
                 kind: "text",
-                track: 0,
+                track: 4,
                 start: start,
                 duration: duration
             })
@@ -727,7 +727,7 @@ ApplicationWindow {
                 placeholderText: "Введи текст титра…"
                 wrapMode: TextEdit.Wrap
             }
-            Label { text: "Длительность: 5 секунд · дорожка V2"; color: theme.muted }
+            Label { text: "Длительность: 5 секунд · отдельная дорожка V3"; color: theme.muted }
         }
     }
 
@@ -1287,7 +1287,7 @@ ApplicationWindow {
                             text: {
                                 var activeText = root.mediaFiles.filter(function(item) {
                                     return item.kind === "text"
-                                        && (Number(item.track) === 0 || Number(item.track) === 1)
+                                        && (Number(item.track) === 0 || Number(item.track) === 1 || Number(item.track) === 4)
                                         && Number(item.start || 0) <= root.timelinePosition
                                         && Number(item.start || 0) + root.timelineClipDuration(item) > root.timelinePosition
                                 })
@@ -1479,7 +1479,7 @@ ApplicationWindow {
                                 }
                             }
                             Repeater {
-                                model: ["V2", "V1", "A1", "A2"]
+                                model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
                                 delegate: Item {
                                     id: timelineTrack
                                     required property string modelData
@@ -1601,7 +1601,7 @@ ApplicationWindow {
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
                                                     var desiredStart = Math.max(0, Math.round(draggedX / Math.max(0.001, timelineCanvas.timelineScale)))
                                                     // The track rows start at y=25 and repeat every 37 pixels.
-                                                    var targetTrack = Math.max(0, Math.min(3, Math.floor((scenePos.y - 23.5) / 37)))
+                                                    var targetTrack = Math.max(0, Math.min(4, Math.floor((scenePos.y - 23.5) / 37)))
                                                     var clipId = String(updated[movingIndex].clipId || "")
                                                     var placedStart = root.findFreeTimelineStart(targetTrack, desiredStart, duration, clipId)
                                                     var didSnap = Math.abs(placedStart - desiredStart) > 0.001
@@ -1614,7 +1614,7 @@ ApplicationWindow {
                                                     } else {
                                                         root.statusMessage = targetTrack === Number(timelineClip.modelData.track)
                                                             ? "Клип перемещён"
-                                                            : "Клип перемещён на дорожку " + ["V2", "V1", "A1", "A2"][targetTrack]
+                                                            : "Клип перемещён на дорожку " + ["V2", "V1", "A1", "A2", "V3"][targetTrack]
                                                     }
                                                     root.mediaFiles = updated
                                                     if (root.currentProjectPath !== "")
