@@ -46,7 +46,7 @@ ApplicationWindow {
     function openProject(path, name) {
         if (!projectStore.openProject(path)) { statusMessage = projectStore.lastError(); return }
         currentProjectPath = path
-        currentProjectName = name || path.split("/").pop().replace(/\\.cutrix$/, "")
+        currentProjectName = name || path.split("/").pop().replace(/\.cutrix$/, "")
         refreshProjects()
         statusMessage = "Открыт проект: " + currentProjectName
     }
