@@ -46,6 +46,7 @@ ApplicationWindow {
         return end
     }
     property string timelinePreviewUrl: ""
+    property real timelinePreviewClipStart: -1
     property bool timelinePreviewActive: false
     property real timelineSeekPending: -1
 
@@ -104,15 +105,24 @@ ApplicationWindow {
         if (!clip) {
             mediaPlayer.pause()
             timelinePreviewUrl = ""
+            timelinePreviewClipStart = -1
             timelineSeekPending = -1
             return
         }
         var url = String(clip.url)
-        var offset = Math.max(0, seconds - Number(clip.start || 0))
+        var clipStart = Number(clip.start || 0)
+        var offset = Math.max(0, seconds - clipStart)
         if (url !== String(timelinePreviewUrl)) {
             mediaPlayer.pause()
             timelinePreviewUrl = url
+            timelinePreviewClipStart = clipStart
             timelineSeekPending = offset
+        } else if (clipStart !== Number(timelinePreviewClipStart)) {
+            // The same source may be used by consecutive clips. Treat each timeline
+            // instance as a new segment and seek to its own offset at the cut.
+            timelinePreviewClipStart = clipStart
+            mediaPlayer.position = offset * 1000
+            if (timelinePlaybackTimer.running) mediaPlayer.play()
         } else {
             var target = offset * 1000
             if (Math.abs(mediaPlayer.position - target) > 120) mediaPlayer.position = target
@@ -383,6 +393,7 @@ ApplicationWindow {
                 // Do not advance the playhead while the decoder switches to this clip.
                 // Otherwise the timeline can pass the entire clip before it starts playing.
                 if (String(currentClip.url) !== String(root.timelinePreviewUrl)
+                        || Number(currentClip.start || 0) !== Number(root.timelinePreviewClipStart)
                         || root.timelineSeekPending >= 0
                         || (mediaPlayer.mediaStatus !== MediaPlayer.LoadedMedia
                             && mediaPlayer.mediaStatus !== MediaPlayer.BufferedMedia)) {
