@@ -1210,14 +1210,15 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.SizeAllCursor
                                                 drag.target: timelineClip
-                                                drag.axis: Drag.XAxis
+                                                drag.axis: Drag.XAndYAxis
                                                 drag.minimumX: 0
                                                 drag.maximumX: Math.max(0, timelineTrack.width - timelineClip.width)
                                                 onReleased: {
+                                                    // Возвращаем клип в центр дорожки даже если пользователь
+                                                    // перетащил его вверх, чтобы обойти соседний клип.
+                                                    timelineClip.y = 2
                                                     var updated = root.mediaFiles.slice()
                                                     var movingIndex = -1
-                                                    // Ищем именно этот экземпляр клипа, а не первый файл
-                                                    // с таким URL: один источник можно использовать несколько раз.
                                                     for (var i = 0; i < updated.length; ++i) {
                                                         if (String(updated[i].url) === String(timelineClip.modelData.url)
                                                                 && Number(updated[i].track) === Number(timelineClip.modelData.track)
@@ -1232,23 +1233,53 @@ ApplicationWindow {
                                                         root.statusMessage = "Не удалось найти клип в проекте"
                                                         return
                                                     }
-                                                    var newStart = Math.max(0, Math.round(timelineClip.x / 3))
-                                                    var movingDuration = Number(updated[movingIndex].duration || 36)
-                                                    var collision = updated.some(function(item, index) {
-                                                        if (index === movingIndex || Number(item.track) !== Number(updated[movingIndex].track)) return false
-                                                        var otherStart = Number(item.start || 0)
-                                                        var otherEnd = otherStart + Number(item.duration || 36)
-                                                        return newStart < otherEnd && newStart + movingDuration > otherStart
-                                                    })
-                                                    if (collision) {
-                                                        timelineClip.x = Number(timelineClip.modelData.start || 0) * 3
-                                                        root.statusMessage = "Нельзя наложить клипы друг на друга на одной дорожке"
+
+                                                    var movingDuration = Math.max(1, Number(updated[movingIndex].duration || 36))
+                                                    var requestedStart = Math.max(0, Math.round(timelineClip.x / 3))
+                                                    var maxStart = Math.max(0, Math.floor((timelineTrack.width - timelineClip.width) / 3))
+                                                    requestedStart = Math.min(requestedStart, maxStart)
+
+                                                    // Вместо запрета ищем ближайшее свободное место слева или справа
+                                                    // от соседнего клипа. Можно протащить клип через верх и отпустить
+                                                    // с другой стороны — пересечения в сохранённом монтаже не будет.
+                                                    var candidates = [0, maxStart, requestedStart]
+                                                    for (var j = 0; j < updated.length; ++j) {
+                                                        if (j === movingIndex || Number(updated[j].track) !== Number(updated[movingIndex].track)) continue
+                                                        var otherStart = Math.max(0, Number(updated[j].start || 0))
+                                                        var otherEnd = otherStart + Math.max(1, Number(updated[j].duration || 36))
+                                                        candidates.push(Math.max(0, Math.floor(otherStart - movingDuration)))
+                                                        candidates.push(Math.ceil(otherEnd))
+                                                    }
+
+                                                    var bestStart = -1
+                                                    var bestDistance = Infinity
+                                                    for (var c = 0; c < candidates.length; ++c) {
+                                                        var candidate = Math.max(0, Math.min(maxStart, candidates[c]))
+                                                        var candidateEnd = candidate + movingDuration
+                                                        var blocked = updated.some(function(item, index) {
+                                                            if (index === movingIndex || Number(item.track) !== Number(updated[movingIndex].track)) return false
+                                                            var otherStart = Math.max(0, Number(item.start || 0))
+                                                            var otherEnd = otherStart + Math.max(1, Number(item.duration || 36))
+                                                            return candidate < otherEnd && candidateEnd > otherStart
+                                                        })
+                                                        var distance = Math.abs(candidate - requestedStart)
+                                                        if (!blocked && distance < bestDistance) {
+                                                            bestStart = candidate
+                                                            bestDistance = distance
+                                                        }
+                                                    }
+                                                    if (bestStart < 0) {
+                                                        timelineClip.x = Math.max(0, Number(timelineClip.modelData.start || 0) * 3)
+                                                        root.statusMessage = "На дорожке нет свободного места для этого клипа"
                                                         return
                                                     }
-                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: newStart })
+                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: bestStart })
                                                     root.mediaFiles = updated
                                                     root.saveTimelineMedia(updated)
-                                                    root.statusMessage = "Клип перемещён"
+                                                    timelineClip.x = bestStart * 3
+                                                    root.statusMessage = bestStart === requestedStart
+                                                        ? "Клип перемещён"
+                                                        : "Клип упёрся в соседний и встал рядом"
                                                 }
                                             }
                                         }
