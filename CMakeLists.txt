@@ -8,7 +8,11 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Multimedia)
 qt_standard_project_setup(REQUIRES 6.5)
 
-qt_add_executable(cutrix src/main.cpp)
+qt_add_executable(cutrix
+    src/main.cpp
+    src/ProjectStore.cpp
+    src/ProjectStore.h
+)
 
 qt_add_qml_module(cutrix
     URI Cutrix
