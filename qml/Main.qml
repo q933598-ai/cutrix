@@ -55,7 +55,8 @@ ApplicationWindow {
                 && Number(item.start || 0) + Number(item.duration || 0) > seconds
         })
         if (candidates.length === 0) return null
-        candidates.sort(function(a, b) { return Number(b.track) - Number(a.track) })
+        // V2 находится выше V1 и перекрывает его.
+        candidates.sort(function(a, b) { return Number(a.track) - Number(b.track) })
         return candidates[0]
     }
     function selectMedia(name) {
@@ -74,6 +75,7 @@ ApplicationWindow {
         timelinePreviewActive = false
         timelinePreviewUrl = ""
         timelineSeekPending = -1
+        mediaPlayer.stop()
         mediaPlayer.source = selectedMediaUrl
         mediaPlayer.play()
         statusMessage = "Предпросмотр файла: " + selectedMedia
@@ -85,6 +87,7 @@ ApplicationWindow {
         if (!clip) {
             mediaPlayer.pause()
             timelinePreviewUrl = ""
+            timelineSeekPending = -1
             return
         }
         var url = String(clip.url)
@@ -355,6 +358,7 @@ ApplicationWindow {
         onTriggered: {
             root.timelinePosition = Math.min(root.timelineDuration, root.timelinePosition + interval / 1000)
             if (root.timelinePosition >= root.timelineDuration) {
+                root.timelinePosition = root.timelineDuration
                 stop()
                 mediaPlayer.pause()
                 return
@@ -363,11 +367,20 @@ ApplicationWindow {
             if (!clip) {
                 mediaPlayer.pause()
                 root.timelinePreviewUrl = ""
-            } else if (String(clip.url) !== String(root.timelinePreviewUrl)) {
-                root.updateTimelinePreview(root.timelinePosition)
-            } else if (mediaPlayer.playbackState !== MediaPlayer.PlayingState) {
-                mediaPlayer.play()
+                root.timelineSeekPending = -1
+                return
             }
+            if (String(clip.url) !== String(root.timelinePreviewUrl)) {
+                root.updateTimelinePreview(root.timelinePosition)
+                return
+            }
+            // Синхронизируем таймлайн с реальным временем воспроизведения.
+            var actualPosition = Number(clip.start || 0) + mediaPlayer.position / 1000
+            if (Math.abs(actualPosition - root.timelinePosition) > 0.15)
+                root.timelinePosition = Math.min(root.timelineDuration, actualPosition)
+            if (mediaPlayer.playbackState !== MediaPlayer.PlayingState
+                    && mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia)
+                mediaPlayer.play()
         }
     }
 
@@ -1147,7 +1160,7 @@ ApplicationWindow {
                                             id: timelineClip
                                             required property var modelData
                                             x: Math.max(0, Number(modelData.start || 0) * 3)
-                                            width: Math.max(90, Number(modelData.duration || 36) * 3)
+                                            width: Math.max(3, Number(modelData.duration || 36) * 3)
                                             height: 21
                                             y: 2
                                             clip: true
