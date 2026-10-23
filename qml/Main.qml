@@ -791,6 +791,8 @@ ApplicationWindow {
                     Button {
                         text: "+ Импортировать"
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.maximumWidth: mediaPanel.width - 18
                         Layout.preferredHeight: 34
                         leftPadding: 5
                         rightPadding: 5
