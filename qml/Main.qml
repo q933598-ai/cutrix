@@ -950,6 +950,8 @@ ApplicationWindow {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 164
+            Layout.minimumHeight: 164
+            Layout.alignment: Qt.AlignBottom
             color: theme.panel
             border.color: theme.border
             ColumnLayout {
