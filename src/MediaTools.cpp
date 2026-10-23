@@ -67,6 +67,11 @@ QVariantMap MediaTools::inspect(const QString &url) const
 
 QString MediaTools::thumbnail(const QString &url) const
 {
+    return thumbnailAt(url, 1.0);
+}
+
+QString MediaTools::thumbnailAt(const QString &url, double seconds) const
+{
     const QString path = localPath(url);
     const QFileInfo info(path);
     if (!info.exists() || !info.isFile()) return {};
@@ -74,20 +79,22 @@ QString MediaTools::thumbnail(const QString &url) const
     if (QStringList{"png","jpg","jpeg","webp","bmp","gif","tif","tiff"}.contains(suffix))
         return QUrl::fromLocalFile(path).toString();
 
+    const double safeSeconds = qMax(0.0, seconds);
     const QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     if (cacheRoot.isEmpty()) return {};
     const QString cacheDir = cacheRoot + "/media-thumbnails";
     if (!QDir().mkpath(cacheDir)) return {};
     const QByteArray key = QCryptographicHash::hash(
-        (info.absoluteFilePath() + "|" + QString::number(info.lastModified().toSecsSinceEpoch()))
+        (info.absoluteFilePath() + "|" + QString::number(info.lastModified().toSecsSinceEpoch())
+         + "|" + QString::number(safeSeconds, 'f', 2))
             .toUtf8(), QCryptographicHash::Sha256).toHex();
     const QString output = cacheDir + "/" + QString::fromLatin1(key) + ".jpg";
     if (QFileInfo::exists(output)) return QUrl::fromLocalFile(output).toString();
 
-    const QString seek = "1";
+    const QString seek = QString::number(safeSeconds, 'f', 2);
     const QString generated = runTool("ffmpeg", {
         "-hide_banner", "-loglevel", "error", "-ss", seek, "-i", path,
-        "-frames:v", "1", "-vf", "scale=480:270:force_original_aspect_ratio=decrease",
+        "-frames:v", "1", "-vf", "scale=160:90:force_original_aspect_ratio=decrease",
         "-y", output
     }, 15000);
     Q_UNUSED(generated);
