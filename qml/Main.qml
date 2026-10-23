@@ -164,17 +164,46 @@ ApplicationWindow {
             })
         }
         blockers.sort(function(a, b) { return a.start - b.start })
+
+        // Magnetic edge snapping: within 12 screen pixels, align the dragged
+        // clip's start/end exactly with a neighboring clip's end/start.
+        var tolerance = 12 / Math.max(0.001, timelineCanvas.timelineScale)
+        var nearest = start
+        var nearestDistance = tolerance + 1
         for (var j = 0; j < blockers.length; ++j) {
-            if (start < blockers[j].end && start + clipDuration > blockers[j].start)
-                start = blockers[j].end
+            var edges = [blockers[j].start - clipDuration, blockers[j].end]
+            for (var e = 0; e < edges.length; ++e) {
+                var candidate = Math.max(0, edges[e])
+                var distance = Math.abs(candidate - start)
+                if (distance <= tolerance && distance < nearestDistance) {
+                    nearest = candidate
+                    nearestDistance = distance
+                }
+            }
         }
-        return start
+        start = nearest
+
+        // If the proposed interval overlaps, move it to a free edge.
+        var changed = true
+        while (changed) {
+            changed = false
+            for (var k = 0; k < blockers.length; ++k) {
+                if (start < blockers[k].end && start + clipDuration > blockers[k].start) {
+                    var left = blockers[k].start - clipDuration
+                    var right = blockers[k].end
+                    start = left >= 0 && Math.abs(left - start) < Math.abs(right - start) ? left : right
+                    changed = true
+                    break
+                }
+            }
+        }
+        return Math.max(0, start)
     }
 
     function timelineVideoAt(seconds) {
         var candidates = mediaFiles.filter(function(item) {
             return (Number(item.track) === 0 || Number(item.track) === 1)
-                && item.kind !== "audio"
+                && item.kind !== "audio" && item.kind !== "text"
                 && Number(item.start || 0) <= seconds
                 && Number(item.start || 0) + Number(item.duration || 0) > seconds
         })
@@ -423,6 +452,7 @@ ApplicationWindow {
             Action { text: "Менеджер проектов"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
             Action { text: "Закрыть проект"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
             Action { text: "Сохранить проект"; onTriggered: { if (root.currentProjectPath !== "" && projectStore.saveProjectMedia(root.currentProjectPath, root.mediaFiles)) root.statusMessage = "Проект сохранён"; else root.statusMessage = projectStore.lastError() } }
+            Action { text: "Добавить текстовый клип…"; enabled: root.currentProjectPath !== ""; onTriggered: textClipDialog.open() }
             MenuSeparator {}
             Action { text: "Выход"; onTriggered: Qt.quit() }
         }
@@ -526,6 +556,10 @@ ApplicationWindow {
                 return
             }
 
+            for (var audioIndex = 0; audioIndex < timelineAudioPlayers.count; ++audioIndex) {
+                var audioPlayer = timelineAudioPlayers.itemAt(audioIndex)
+                if (audioPlayer) audioPlayer.syncToTimeline()
+            }
             var currentClip = root.timelineVideoAt(root.timelinePosition)
             if (currentClip) {
                 var currentId = String(currentClip.clipId || "")
@@ -580,6 +614,42 @@ ApplicationWindow {
         }
     }
 
+    Repeater {
+        id: timelineAudioPlayers
+        model: root.mediaFiles.filter(function(item) {
+            return item.kind === "audio" && (Number(item.track) === 2 || Number(item.track) === 3)
+        })
+        delegate: MediaPlayer {
+            required property var modelData
+            source: modelData.url
+            audioOutput: AudioOutput {}
+            property bool timelineAudioActive: timelinePlaybackTimer.running
+                && Number(modelData.start || 0) <= root.timelinePosition
+                && Number(modelData.start || 0) + root.timelineClipDuration(modelData) > root.timelinePosition
+            function syncToTimeline() {
+                if (!timelineAudioActive || !timelinePlaybackTimer.running) {
+                    pause()
+                    return
+                }
+                var target = Math.max(0, root.timelinePosition - Number(modelData.start || 0)) * 1000
+                if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
+                    if (Math.abs(position - target) > 350) position = target
+                    if (playbackState !== MediaPlayer.PlayingState) play()
+                }
+            }
+            onTimelineAudioActiveChanged: syncToTimeline()
+            onMediaStatusChanged: syncToTimeline()
+            Connections {
+                target: root
+                function onTimelinePositionChanged() { parent.syncToTimeline() }
+            }
+            Connections {
+                target: timelinePlaybackTimer
+                function onRunningChanged() { parent.syncToTimeline() }
+            }
+        }
+    }
+
     MediaPlayer {
         id: mediaPlayer
         source: root.timelinePreviewActive ? root.timelinePreviewUrl : root.selectedMediaUrl
@@ -610,6 +680,54 @@ ApplicationWindow {
             } else if (mediaStatus === MediaPlayer.InvalidMedia) {
                 root.statusMessage = "Не удалось открыть видео. Проверь формат и кодеки."
             }
+        }
+    }
+
+    Dialog {
+        id: textClipDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        width: 440
+        title: "Добавить текстовый клип"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: {
+            var value = textClipInput.text.trim()
+            if (value === "") {
+                root.statusMessage = "Текстовый клип не может быть пустым"
+                return
+            }
+            var updated = root.mediaFiles.slice()
+            var start = Math.max(0, root.timelinePosition)
+            var duration = 5
+            // Titles live on V2, above V1 footage.
+            start = root.findFreeTimelineStart(0, start, duration, "")
+            updated.push({
+                clipId: root.createTimelineClipId(),
+                name: "Текст: " + value.substring(0, 24),
+                text: value,
+                url: "",
+                kind: "text",
+                track: 0,
+                start: start,
+                duration: duration
+            })
+            root.mediaFiles = updated
+            root.saveTimelineMedia(updated)
+            root.timelinePosition = start
+            root.statusMessage = "Добавлен текстовый клип на 5 секунд"
+        }
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label { text: "ТЕКСТ НА ВИДЕО"; color: theme.accent }
+            TextArea {
+                id: textClipInput
+                Layout.fillWidth: true
+                Layout.preferredHeight: 110
+                placeholderText: "Введи текст титра…"
+                wrapMode: TextEdit.Wrap
+            }
+            Label { text: "Длительность: 5 секунд · дорожка V2"; color: theme.muted }
         }
     }
 
@@ -1152,6 +1270,32 @@ ApplicationWindow {
                             visible: true
                         }
 
+                        Text {
+                            id: timelineTextOverlay
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 36
+                            width: parent.width * 0.86
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            color: "white"
+                            style: Text.Outline
+                            styleColor: "#111111"
+                            font.bold: true
+                            font.pixelSize: 30
+                            z: 5
+                            text: {
+                                var activeText = root.mediaFiles.filter(function(item) {
+                                    return item.kind === "text"
+                                        && (Number(item.track) === 0 || Number(item.track) === 1)
+                                        && Number(item.start || 0) <= root.timelinePosition
+                                        && Number(item.start || 0) + root.timelineClipDuration(item) > root.timelinePosition
+                                })
+                                return activeText.length ? String(activeText[activeText.length - 1].text || "") : ""
+                            }
+                            visible: text !== "" && root.timelinePreviewActive
+                        }
+
                         Rectangle {
                             anchors.fill: parent
                             visible: !mediaPlayer.hasVideo
@@ -1367,12 +1511,13 @@ ApplicationWindow {
                                             height: 30
                                             y: 2 + (draggingClip ? dragOffsetY : 0)
                                             clip: true
-                                            color: /\\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(modelData.name) ? "#226d6c" : "#315b9b"
+                                            color: modelData.kind === "text" ? "#a36ac7"
+                                                : modelData.kind === "audio" ? "#226d6c" : "#315b9b"
                                             border.color: theme.accent
                                             Row {
                                                 anchors.fill: parent
                                                 clip: true
-                                                visible: !/\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(timelineClip.modelData.name)
+                                                visible: timelineClip.modelData.kind !== "audio" && timelineClip.modelData.kind !== "text"
                                                 Repeater {
                                                     model: Math.max(1, Math.ceil(timelineClip.width / 54))
                                                     delegate: Image {
@@ -1391,7 +1536,7 @@ ApplicationWindow {
                                             Text {
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 5
-                                                text: modelData.name
+                                                text: modelData.kind === "text" ? "T · " + modelData.text : modelData.name
                                                 color: "#f0f2ff"
                                                 font.family: "monospace"
                                                 font.pixelSize: 10
