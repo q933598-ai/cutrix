@@ -47,6 +47,21 @@ ApplicationWindow {
     property bool timelinePreviewActive: false
     property real timelineSeekPending: -1
 
+    function formatTime(seconds) {
+        var value = Number(seconds)
+        if (!isFinite(value) || value < 0) value = 0
+        value = Math.floor(value)
+        var minutes = Math.floor(value / 60)
+        var remainingSeconds = value % 60
+        return (minutes < 10 ? "0" : "") + minutes + ":" +
+               (remainingSeconds < 10 ? "0" : "") + remainingSeconds
+    }
+
+    function saveTimelineMedia(items) {
+        if (currentProjectPath !== "")
+            projectStore.saveProjectMedia(currentProjectPath, items)
+    }
+
     function timelineVideoAt(seconds) {
         var candidates = mediaFiles.filter(function(item) {
             return (Number(item.track) === 0 || Number(item.track) === 1)
@@ -995,7 +1010,7 @@ ApplicationWindow {
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: mediaPlayer.position >= 0 ? Qt.formatTime(mediaPlayer.position / 1000, "mm:ss") + " / " + Qt.formatTime(mediaPlayer.duration / 1000, "mm:ss") : "00:00 / 00:00"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                        Text { text: root.formatTime(mediaPlayer.position / 1000) + " / " + root.formatTime(mediaPlayer.duration / 1000); color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                         Item { Layout.fillWidth: true }
                         Button {
                             text: "▶ Файл"
@@ -1224,8 +1239,7 @@ ApplicationWindow {
                                                     }
                                                     updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: newStart })
                                                     root.mediaFiles = updated
-                                                    if (root.currentProjectPath !== "")
-                                                        projectStore.saveProjectMedia(root.currentProjectPath, updated)
+                                                    root.saveTimelineMedia(updated)
                                                     root.statusMessage = "Клип перемещён"
                                                 }
                                             }
@@ -1269,7 +1283,7 @@ ApplicationWindow {
                                                     return
                                                 }
                                                 root.mediaFiles = updated
-                                                if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
+                                                root.saveTimelineMedia(updated)
                                                 root.timelinePosition = movedStart
                                                 root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
                                                 drop.acceptProposedAction()
