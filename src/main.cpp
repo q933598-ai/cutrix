@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QQmlContext>
 #include "ProjectStore.h"
+#include "MediaTools.h"
 
 int main(int argc, char *argv[])
 {
@@ -16,8 +17,10 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle("Basic");
 
     ProjectStore projectStore;
+    MediaTools mediaTools;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("projectStore", &projectStore);
+    engine.rootContext()->setContextProperty("mediaTools", &mediaTools);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
