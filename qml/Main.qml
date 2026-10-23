@@ -33,6 +33,7 @@ ApplicationWindow {
     property string projectSort: "Последние"
     property var recentProjects: projectStore.recentProjects()
     property string statusMessage: "Готово · Cutrix Project Hub"
+    property int mediaPanelWidth: 255
 
     readonly property var palettes: ({
         "Tokyo Night": { background: "#101522", panel: "#171f32", panelAlt: "#1d2942", border: "#30466f", text: "#d7e2ff", muted: "#8299c9", accent: "#7aa2f7", accent2: "#bb9af7", green: "#9ece6a" },
@@ -672,13 +673,17 @@ ApplicationWindow {
             }
 
             Rectangle {
-                Layout.preferredWidth: 255
+                id: mediaPanel
+                Layout.preferredWidth: root.mediaPanelWidth
+                Layout.minimumWidth: 180
+                Layout.maximumWidth: 440
                 Layout.fillHeight: true
                 color: theme.panel
                 border.color: theme.border
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 9
+                    anchors.rightMargin: 13
                     spacing: 8
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
@@ -691,6 +696,11 @@ ApplicationWindow {
                     Button {
                         text: "+ Импортировать"
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 34
+                        leftPadding: 5
+                        rightPadding: 5
+                        font.family: "monospace"
+                        font.pixelSize: 11
                         onClicked: importDialog.open()
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
@@ -973,6 +983,7 @@ ApplicationWindow {
                         }
                     }
                     Item {
+                        id: timelineCanvas
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
@@ -1082,12 +1093,67 @@ ApplicationWindow {
                             }
                         }
                         Rectangle {
-                            x: parent.width * 0.34
+                            id: timelinePlayhead
+                            x: mediaPlayer.duration > 0 ? Math.min(timelineCanvas.width - width, (mediaPlayer.position / mediaPlayer.duration) * timelineCanvas.width) : 0
                             y: 20
                             width: 2
-                            height: parent.height - 20
+                            height: Math.max(0, timelineCanvas.height - 20)
                             color: theme.accent
+                            z: 10
                         }
+                        Rectangle {
+                            x: Math.max(0, Math.min(timelineCanvas.width - width, timelinePlayhead.x - 6))
+                            y: 17
+                            width: 14
+                            height: 14
+                            color: theme.accent
+                            border.color: theme.text
+                            z: 11
+                            Text { anchors.centerIn: parent; text: "▼"; color: theme.background; font.pixelSize: 9 }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.SizeHorCursor
+                                onPressed: function(mouse) {
+                                    var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
+                                    if (mediaPlayer.duration > 0 && timelineCanvas.width > 0)
+                                        mediaPlayer.position = Math.round((Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * mediaPlayer.duration)
+                                }
+                                onPositionChanged: function(mouse) {
+                                    if (pressed && mediaPlayer.duration > 0 && timelineCanvas.width > 0) {
+                                        var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
+                                        mediaPlayer.position = Math.round((Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * mediaPlayer.duration)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            id: mediaPanelResizeHandle
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            x: 8 + 126 + 7 + root.mediaPanelWidth - width
+            width: 8
+            color: resizeMouse.containsMouse || resizeMouse.pressed ? theme.accent : "transparent"
+            z: 50
+            visible: root.currentProjectPath !== ""
+            MouseArea {
+                id: resizeMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.SplitHCursor
+                property real pressX: 0
+                property int initialWidth: root.mediaPanelWidth
+                onPressed: function(mouse) {
+                    pressX = mapToItem(root, mouse.x, mouse.y).x
+                    initialWidth = root.mediaPanelWidth
+                }
+                onPositionChanged: function(mouse) {
+                    if (pressed) {
+                        var sceneX = mapToItem(root, mouse.x, mouse.y).x
+                        root.mediaPanelWidth = Math.max(180, Math.min(440, initialWidth + sceneX - pressX))
                     }
                 }
             }
