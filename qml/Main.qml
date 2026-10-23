@@ -28,7 +28,97 @@ ApplicationWindow {
     })
     readonly property var theme: palettes[currentTheme]
 
+    // Pixel-style client title bar: Niri does not always provide native decorations.
+    header: Rectangle {
+        implicitHeight: 42
+        color: theme.panel
+        border.color: theme.border
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 5
+            spacing: 8
+            Text {
+                text: "◆ CUTRIX"
+                color: theme.accent
+                font.family: "monospace"
+                font.pixelSize: 15 * root.uiFontScale / 100
+                font.bold: true
+            }
+            Text {
+                text: "PIXEL VIDEO EDITOR / v0.1.0"
+                color: theme.muted
+                font.family: "monospace"
+                font.pixelSize: 11 * root.uiFontScale / 100
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: [
+                    { glyph: "—", tip: "Свернуть", action: 0 },
+                    { glyph: "□", tip: "Развернуть", action: 1 },
+                    { glyph: "×", tip: "Закрыть", action: 2 }
+                ]
+                delegate: Rectangle {
+                    required property var modelData
+                    width: 34
+                    height: 30
+                    color: titleButtonMouse.containsMouse
+                           ? (modelData.action === 2 ? "#b94a58" : theme.panelAlt)
+                           : "transparent"
+                    border.color: titleButtonMouse.containsMouse ? theme.accent : theme.border
+                    Text {
+                        anchors.centerIn: parent
+                        text: modelData.glyph
+                        color: theme.text
+                        font.family: "monospace"
+                        font.pixelSize: 16 * root.uiFontScale / 100
+                    }
+                    MouseArea {
+                        id: titleButtonMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (modelData.action === 0) root.showMinimized()
+                            else if (modelData.action === 1)
+                                root.visibility = root.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
+                            else root.close()
+                        }
+                    }
+                }
+            }
+        }
+        MouseArea {
+            anchors.fill: parent
+            z: -1
+            acceptedButtons: Qt.LeftButton
+            onPressed: root.startSystemMove()
+        }
+    }
+
     menuBar: MenuBar {
+        palette.window: theme.panel
+        palette.buttonText: theme.text
+        palette.text: theme.text
+        background: Rectangle {
+            color: theme.panel
+            border.color: theme.border
+        }
+        delegate: MenuBarItem {
+            id: menuItem
+            contentItem: Text {
+                text: menuItem.text
+                color: menuItem.highlighted ? theme.accent : theme.text
+                font.family: "monospace"
+                font.pixelSize: 12 * root.uiFontScale / 100
+                verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: Text.AlignHCenter
+            }
+            background: Rectangle {
+                color: menuItem.highlighted ? theme.panelAlt : "transparent"
+                border.color: menuItem.highlighted ? theme.accent : "transparent"
+            }
+        }
         Menu {
             title: "Файл"
             Action { text: "Импортировать медиа…"; onTriggered: importDialog.open() }
