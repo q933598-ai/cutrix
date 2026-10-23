@@ -50,9 +50,11 @@ ApplicationWindow {
     property real timelinePreviewClipStart: -1
     property bool timelinePreviewActive: false
     property string timelineImageUrl: ""
+    property string timelineImageClipId: ""
     property bool timelineImageActive: false
     property real timelineSeekPending: -1
     property int timelineClipSerial: 0
+    property string contextMenuClipId: ""
 
     function formatTime(seconds) {
         var value = Number(seconds)
@@ -223,6 +225,35 @@ ApplicationWindow {
         candidates.sort(function(a, b) { return Number(a.track) - Number(b.track) })
         return candidates[0]
     }
+    function timelineFootageAt(seconds) {
+        var candidates = mediaFiles.filter(function(item) {
+            return (Number(item.track) === 0 || Number(item.track) === 1)
+                && item.kind === "video"
+                && Number(item.start || 0) <= seconds
+                && Number(item.start || 0) + timelineClipDuration(item) > seconds
+        })
+        if (candidates.length === 0) return null
+        candidates.sort(function(a, b) { return Number(a.track) - Number(b.track) })
+        return candidates[0]
+    }
+
+    function removeTimelineClip(clipId) {
+        var id = String(clipId || "")
+        if (id === "") return
+        var updated = mediaFiles.filter(function(item) {
+            return Number(item.track) < 0 || String(item.clipId || "") !== id
+        })
+        if (updated.length === mediaFiles.length) {
+            statusMessage = "Клип уже удалён"
+            return
+        }
+        mediaFiles = updated
+        saveTimelineMedia(updated)
+        contextMenuClipId = ""
+        updateTimelinePreview(timelinePosition)
+        statusMessage = "Клип удалён с дорожки; исходник остался в медиатеке"
+    }
+
     function selectMedia(name) {
         timelinePlaybackTimer.stop()
         mediaPlayer.pause()
@@ -255,6 +286,7 @@ ApplicationWindow {
         if (!clip) {
             timelineImageActive = false
             timelineImageUrl = ""
+            timelineImageClipId = ""
             mediaPlayer.pause()
             timelinePreviewUrl = ""
             timelinePreviewClipId = ""
@@ -268,20 +300,51 @@ ApplicationWindow {
         var clipStart = Number(clip.start || 0)
         var offset = Math.max(0, seconds - clipStart)
 
-        // QMediaPlayer decodes video; render still-image files in a QML Image.
+        // A still image on the upper track overlays the lower video, but must
+        // not replace its decoder: otherwise the underlying video's audio dies.
         if (clip.kind === "image") {
             timelineImageActive = true
             timelineImageUrl = url
-            mediaPlayer.pause()
-            timelinePreviewUrl = ""
-            timelinePreviewClipId = clipId
-            timelinePreviewClipStart = clipStart
-            timelineSeekPending = -1
+            timelineImageClipId = clipId
+            var footage = timelineFootageAt(seconds)
+            if (!footage) {
+                mediaPlayer.pause()
+                timelinePreviewUrl = ""
+                timelinePreviewClipId = ""
+                timelinePreviewClipStart = -1
+                timelineSeekPending = -1
+                return
+            }
+
+            var footageUrl = String(footage.url || "")
+            var footageId = String(footage.clipId || "")
+            var footageStart = Number(footage.start || 0)
+            var footageOffset = Math.max(0, seconds - footageStart)
+            if (footageUrl !== String(timelinePreviewUrl)
+                    || footageId !== String(timelinePreviewClipId)
+                    || footageStart !== timelinePreviewClipStart) {
+                mediaPlayer.pause()
+                timelinePreviewUrl = footageUrl
+                timelinePreviewClipId = footageId
+                timelinePreviewClipStart = footageStart
+                timelineSeekPending = footageOffset
+            } else {
+                var footageTarget = footageOffset * 1000
+                if (mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
+                        || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia) {
+                    if (Math.abs(mediaPlayer.position - footageTarget) > 350)
+                        mediaPlayer.position = footageTarget
+                    if (timelinePlaybackTimer.running
+                            && mediaPlayer.playbackState !== MediaPlayer.PlayingState)
+                        mediaPlayer.play()
+                }
+            }
             return
         }
 
         timelineImageActive = false
         timelineImageUrl = ""
+        timelineImageClipId = ""
         if (url !== String(timelinePreviewUrl) || clipId !== String(timelinePreviewClipId)
                 || clipStart !== timelinePreviewClipStart) {
             mediaPlayer.pause()
@@ -295,7 +358,6 @@ ApplicationWindow {
                 mediaPlayer.position = target
         }
     }
-
     function handleTimelineEndOfMedia() {
         if (!timelinePlaybackTimer.running || timelineImageActive) return
 
@@ -497,6 +559,14 @@ ApplicationWindow {
         }
     }
 
+    Menu {
+        id: timelineClipContextMenu
+        MenuItem {
+            text: "Удалить клип с дорожки"
+            onTriggered: root.removeTimelineClip(root.contextMenuClipId)
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         visible: root.currentProjectPath === ""
@@ -590,13 +660,32 @@ ApplicationWindow {
             if (currentClip && currentClip.kind === "image") {
                 var imageClipId = String(currentClip.clipId || "")
                 if (!root.timelineImageActive
-                        || imageClipId !== String(root.timelinePreviewClipId)
+                        || imageClipId !== String(root.timelineImageClipId)
                         || String(currentClip.url || "") !== String(root.timelineImageUrl)) {
                     root.updateTimelinePreview(root.timelinePosition)
                     return
                 }
 
-                // Still images have no decoder clock; advance with the montage timer.
+                // Keep the lower video's audio/decoder running underneath the still.
+                if (String(root.timelinePreviewClipId || "") !== "") {
+                    var backgroundReady = mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
+                        || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia
+                        || mediaPlayer.mediaStatus === MediaPlayer.EndOfMedia
+                    if (backgroundReady && root.timelineSeekPending >= 0) {
+                        mediaPlayer.position = root.timelineSeekPending * 1000
+                        root.timelineSeekPending = -1
+                        mediaPlayer.play()
+                    } else if (backgroundReady) {
+                        var backgroundTarget = Math.max(0, root.timelinePosition
+                            - root.timelinePreviewClipStart) * 1000
+                        if (Math.abs(mediaPlayer.position - backgroundTarget) > 400)
+                            mediaPlayer.position = backgroundTarget
+                        if (mediaPlayer.playbackState !== MediaPlayer.PlayingState)
+                            mediaPlayer.play()
+                    }
+                }
+
+                // A still image has no decoder clock; the montage timer advances it.
                 root.timelinePosition = Math.min(root.timelineDuration,
                                                  root.timelinePosition + interval / 1000)
                 if (root.timelinePosition >= root.timelineDuration) {
@@ -1694,9 +1783,17 @@ ApplicationWindow {
                                             z: draggingClip ? 10 : 1
                                             MouseArea {
                                                 anchors.fill: parent
+                                                acceptedButtons: Qt.LeftButton | Qt.RightButton
                                                 preventStealing: true
-                                                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                                                cursorShape: pressed && mouseButtons === Qt.LeftButton
+                                                    ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
+                                                    if (mouse.button === Qt.RightButton) {
+                                                        root.contextMenuClipId = String(timelineClip.modelData.clipId || "")
+                                                        timelineClipContextMenu.popup()
+                                                        mouse.accepted = true
+                                                        return
+                                                    }
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
