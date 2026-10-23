@@ -707,7 +707,7 @@ ApplicationWindow {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
-                                Layout.preferredHeight: 124
+                                Layout.preferredHeight: width + 42
                                 clip: true
                                 color: theme.background
                                 border.color: root.selectedMedia === modelData.name ? theme.accent : theme.border
@@ -716,14 +716,12 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     anchors.margins: 4
                                     spacing: 3
-
                                     Rectangle {
                                         width: parent.width
-                                        height: 78
+                                        height: width
                                         color: theme.panelAlt
                                         border.color: theme.border
                                         clip: true
-
                                         Image {
                                             id: mediaThumbnail
                                             anchors.fill: parent
@@ -735,12 +733,11 @@ ApplicationWindow {
                                         Text {
                                             anchors.centerIn: parent
                                             visible: mediaThumbnail.status !== Image.Ready
-                                            text: mediaCard.modelData.missing ? "НЕТ ФАЙЛА" :
+                                            text: mediaCard.modelData.missing ? "!" :
                                                   mediaCard.modelData.kind === "audio" ? "♫" :
                                                   mediaCard.modelData.kind === "image" ? "▧" : "▶"
-                                            horizontalAlignment: Text.AlignHCenter
                                             color: theme.accent
-                                            font.pixelSize: 24
+                                            font.pixelSize: 28
                                             font.family: "monospace"
                                         }
                                         Text {
@@ -761,28 +758,24 @@ ApplicationWindow {
                                         font.pixelSize: 9
                                         elide: Text.ElideRight
                                     }
-                                    Text {
-                                        width: parent.width
-                                        text: mediaCard.modelData.missing ? "ФАЙЛ НЕ НАЙДЕН" : "ТАЩИ НА ДОРОЖКУ"
-                                        color: mediaCard.modelData.missing ? "#ff6b6b" : theme.muted
-                                        font.family: "monospace"
-                                        font.pixelSize: 8
-                                        elide: Text.ElideRight
-                                    }
                                 }
 
                                 Drag.active: cardDrag.active
                                 Drag.dragType: Drag.Automatic
                                 Drag.mimeData: ({ "text/plain": String(mediaCard.modelData.url) })
                                 Drag.supportedActions: Qt.CopyAction
-                                Drag.hotSpot.x: cardDrag.centroid.position.x
-                                Drag.hotSpot.y: cardDrag.centroid.position.y
-
+                                Drag.hotSpot.x: width / 2
+                                Drag.hotSpot.y: width / 2
                                 DragHandler {
                                     id: cardDrag
                                     target: null
                                     onActiveChanged: {
-                                        if (!active) mediaCard.Drag.drop()
+                                        if (active) {
+                                            root.selectedMedia = mediaCard.modelData.name
+                                            root.statusMessage = "Перетаскиваю: " + mediaCard.modelData.name
+                                        } else {
+                                            mediaCard.Drag.drop()
+                                        }
                                     }
                                 }
                                 TapHandler {
@@ -1000,31 +993,65 @@ ApplicationWindow {
                                     id: timelineTrack
                                     required property string modelData
                                     required property int index
+                                    property bool dropHover: false
                                     width: parent.width
                                     height: 25
-                                    Rectangle { anchors.fill: parent; color: index % 2 === 0 ? theme.panel : theme.background; border.color: theme.border; opacity: 0.95 }
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: timelineTrack.dropHover ? theme.accent2 : (index % 2 === 0 ? theme.panel : theme.background)
+                                        border.color: timelineTrack.dropHover ? theme.accent : theme.border
+                                        opacity: timelineTrack.dropHover ? 0.55 : 0.95
+                                    }
                                     Repeater {
                                         model: root.mediaFiles.filter(function(m) { return Number(m.track) === timelineTrack.index })
                                         delegate: Rectangle {
+                                            id: timelineClip
                                             required property var modelData
                                             x: Math.max(0, Number(modelData.start || 0) * 3)
                                             width: Math.max(90, Number(modelData.duration || 36) * 3)
                                             height: 21
                                             y: 2
+                                            clip: true
                                             color: /\\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(modelData.name) ? "#226d6c" : "#315b9b"
                                             border.color: theme.accent
-                                            Text { anchors.fill: parent; anchors.leftMargin: 5; text: modelData.name; color: "#f0f2ff"; font.family: "monospace"; font.pixelSize: 10; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                                            Image {
+                                                anchors.fill: parent
+                                                source: mediaTools.thumbnail(timelineClip.modelData.url)
+                                                fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
+                                                opacity: 0.55
+                                            }
+                                            Text {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 5
+                                                text: modelData.name
+                                                color: "#f0f2ff"
+                                                font.family: "monospace"
+                                                font.pixelSize: 10
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
+                                            }
                                         }
                                     }
                                     DropArea {
                                         anchors.fill: parent
+                                        onEntered: function(drag) {
+                                            timelineTrack.dropHover = true
+                                            root.statusMessage = "Отпусти, чтобы добавить на " + timelineTrack.modelData
+                                        }
+                                        onExited: timelineTrack.dropHover = false
                                         onDropped: function(drop) {
+                                            timelineTrack.dropHover = false
                                             var url = drop.getDataAsString("text/plain")
                                             var updated = root.mediaFiles.slice()
                                             var found = false
                                             for (var i = 0; i < updated.length; ++i) {
-                                                if (updated[i].url === url) {
-                                                    updated[i] = Object.assign({}, updated[i], { track: timelineTrack.index, start: 0, duration: updated[i].duration || 36 })
+                                                if (String(updated[i].url) === String(url)) {
+                                                    updated[i] = Object.assign({}, updated[i], {
+                                                        track: timelineTrack.index,
+                                                        start: Math.max(0, Math.round(drop.x / 3)),
+                                                        duration: updated[i].duration || 36
+                                                    })
                                                     found = true
                                                     break
                                                 }
@@ -1034,12 +1061,13 @@ ApplicationWindow {
                                                 if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
                                                 root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
                                                 drop.acceptProposedAction()
+                                            } else {
+                                                root.statusMessage = "Не удалось определить перетаскиваемый файл"
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
                         Rectangle {
                             x: parent.width * 0.34
                             y: 20
