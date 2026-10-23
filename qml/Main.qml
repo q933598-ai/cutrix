@@ -683,7 +683,6 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 9
-                    anchors.rightMargin: 13
                     spacing: 8
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
@@ -1038,12 +1037,23 @@ ApplicationWindow {
                                             clip: true
                                             color: /\\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(modelData.name) ? "#226d6c" : "#315b9b"
                                             border.color: theme.accent
-                                            Image {
+                                            Row {
                                                 anchors.fill: parent
-                                                source: mediaTools.thumbnail(timelineClip.modelData.url)
-                                                fillMode: Image.PreserveAspectCrop
-                                                asynchronous: true
-                                                opacity: 0.55
+                                                clip: true
+                                                visible: !/\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(timelineClip.modelData.name)
+                                                Repeater {
+                                                    model: Math.max(1, Math.ceil(timelineClip.width / 54))
+                                                    delegate: Image {
+                                                        required property int index
+                                                        width: 54
+                                                        height: parent.height
+                                                        source: mediaTools.thumbnailAt(timelineClip.modelData.url,
+                                                            Math.max(0, Number(timelineClip.modelData.start || 0) + index * 18))
+                                                        fillMode: Image.PreserveAspectCrop
+                                                        asynchronous: true
+                                                        opacity: 0.7
+                                                    }
+                                                }
                                             }
                                             Text {
                                                 anchors.fill: parent
@@ -1054,6 +1064,27 @@ ApplicationWindow {
                                                 font.pixelSize: 10
                                                 verticalAlignment: Text.AlignVCenter
                                                 elide: Text.ElideRight
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.SizeAllCursor
+                                                drag.target: timelineClip
+                                                drag.axis: Drag.XAxis
+                                                onReleased: {
+                                                    var updated = root.mediaFiles.slice()
+                                                    for (var i = 0; i < updated.length; ++i) {
+                                                        if (String(updated[i].url) === String(timelineClip.modelData.url)) {
+                                                            updated[i] = Object.assign({}, updated[i], {
+                                                                start: Math.max(0, Math.round(timelineClip.x / 3))
+                                                            })
+                                                            break
+                                                        }
+                                                    }
+                                                    root.mediaFiles = updated
+                                                    if (root.currentProjectPath !== "")
+                                                        projectStore.saveProjectMedia(root.currentProjectPath, updated)
+                                                    root.statusMessage = "Клип перемещён"
+                                                }
                                             }
                                         }
                                     }
