@@ -1248,8 +1248,9 @@ ApplicationWindow {
                                                                               Math.min(timelineTrack.height + 2,
                                                                                        dragStartClipY + dy))
                                                 }
-                                                onReleased: {
+                                                onReleased: function(mouse) {
                                                     var wasDragging = draggingClip
+                                                    var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     draggingClip = false
                                                     timelineClip.y = 2
                                                     if (!wasDragging) return
@@ -1272,9 +1273,11 @@ ApplicationWindow {
 
                                                     var duration = Math.max(1, Number(updated[movingIndex].duration || 36))
                                                     var desiredStart = Math.max(0, Math.round(timelineClip.x / Math.max(0.001, timelineCanvas.timelineScale)))
-                                                    var trackIndex = Number(updated[movingIndex].track)
+                                                    // Snap vertically to one of the four tracks using the pointer position
+                                                    // in the fixed canvas, not the clip's temporary y coordinate.
+                                                    var targetTrack = Math.max(0, Math.min(3, Math.round((scenePos.y - 42) / 37)))
                                                     var obstacles = updated.filter(function(item, index) {
-                                                        return index !== movingIndex && Number(item.track) === trackIndex
+                                                        return index !== movingIndex && Number(item.track) === targetTrack
                                                     })
                                                     var overlapsAt = function(start) {
                                                         return obstacles.some(function(item) {
@@ -1283,8 +1286,6 @@ ApplicationWindow {
                                                             return start < otherEnd && start + duration > otherStart
                                                         })
                                                     }
-                                                    // If dropped on a clip, find the nearest free position in the
-                                                    // direction of travel instead of allowing two clips to overlap.
                                                     if (overlapsAt(desiredStart)) {
                                                         var step = desiredStart >= dragStartTimeline ? 1 : -1
                                                         var candidate = desiredStart
@@ -1295,18 +1296,23 @@ ApplicationWindow {
                                                         }
                                                         if (candidate < 0 || attempts >= 10000) {
                                                             candidate = dragStartTimeline
+                                                            targetTrack = Number(updated[movingIndex].track)
                                                             root.statusMessage = "Не удалось найти свободное место для клипа"
                                                         } else {
                                                             root.statusMessage = "Клип поставлен рядом с соседним"
                                                         }
                                                         desiredStart = candidate
                                                     } else {
-                                                        root.statusMessage = "Клип перемещён"
+                                                        root.statusMessage = targetTrack === Number(updated[movingIndex].track)
+                                                            ? "Клип перемещён"
+                                                            : "Клип перемещён на дорожку " + ["V2", "V1", "A1", "A2"][targetTrack]
                                                     }
-                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: desiredStart })
+                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], {
+                                                        start: desiredStart,
+                                                        track: targetTrack
+                                                    })
                                                     root.mediaFiles = updated
                                                     root.saveTimelineMedia(updated)
-                                                    timelineClip.x = desiredStart * timelineCanvas.timelineScale
                                                 }
                                             }
                                         }
