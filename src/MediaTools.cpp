@@ -2,8 +2,13 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QMetaObject>
+#include <QPointer>
 #include <QProcess>
+#include <QMutexLocker>
+#include <QRunnable>
 #include <QStandardPaths>
 #include <QUrl>
 
@@ -30,7 +35,11 @@ QString runTool(const QString &program, const QStringList &args, int timeoutMs =
 }
 }
 
-MediaTools::MediaTools(QObject *parent) : QObject(parent) {}
+MediaTools::MediaTools(QObject *parent) : QObject(parent)
+{
+    m_thumbnailPool.setMaxThreadCount(2);
+    m_thumbnailPool.setExpiryTimeout(30000);
+}
 
 QVariantMap MediaTools::inspect(const QString &url) const
 {
@@ -65,12 +74,12 @@ QVariantMap MediaTools::inspect(const QString &url) const
     return result;
 }
 
-QString MediaTools::thumbnail(const QString &url) const
+QString MediaTools::thumbnail(const QString &url)
 {
     return thumbnailAt(url, 1.0);
 }
 
-QString MediaTools::thumbnailAt(const QString &url, double seconds) const
+QString MediaTools::thumbnailAt(const QString &url, double seconds)
 {
     const QString path = localPath(url);
     const QFileInfo info(path);
@@ -84,22 +93,52 @@ QString MediaTools::thumbnailAt(const QString &url, double seconds) const
     if (cacheRoot.isEmpty()) return {};
     const QString cacheDir = cacheRoot + "/media-thumbnails";
     if (!QDir().mkpath(cacheDir)) return {};
-    const QByteArray key = QCryptographicHash::hash(
+    const QByteArray keyBytes = QCryptographicHash::hash(
         (info.absoluteFilePath() + "|" + QString::number(info.lastModified().toSecsSinceEpoch())
          + "|" + QString::number(safeSeconds, 'f', 2))
             .toUtf8(), QCryptographicHash::Sha256).toHex();
-    const QString output = cacheDir + "/" + QString::fromLatin1(key) + ".jpg";
-    if (QFileInfo::exists(output)) return QUrl::fromLocalFile(output).toString();
-
-    const QString seek = QString::number(safeSeconds, 'f', 2);
-    const QString generated = runTool("ffmpeg", {
-        "-hide_banner", "-loglevel", "error", "-ss", seek, "-i", path,
-        "-frames:v", "1", "-vf", "scale=160:90:force_original_aspect_ratio=decrease",
-        "-y", output
-    }, 15000);
-    Q_UNUSED(generated);
+    const QString key = QString::fromLatin1(keyBytes);
+    const QString output = cacheDir + "/" + key + ".jpg";
     if (QFileInfo::exists(output) && QFileInfo(output).size() > 0)
         return QUrl::fromLocalFile(output).toString();
-    QFile::remove(output);
+
+    // Never wait for ffmpeg from a QML property binding: that blocks the GUI
+    // thread and can freeze both timeline interaction and video presentation.
+    {
+        QMutexLocker lock(&m_thumbnailMutex);
+        if (m_pendingThumbnails.contains(key) || m_failedThumbnails.contains(key))
+            return {};
+        m_pendingThumbnails.insert(key);
+    }
+
+    const QString seek = QString::number(safeSeconds, 'f', 2);
+    QPointer<MediaTools> guardedThis(this);
+    m_thumbnailPool.start(QRunnable::create([guardedThis, path, output, key, seek]() {
+        QFile::remove(output);
+        runTool("ffmpeg", {
+            "-hide_banner", "-loglevel", "error", "-threads", "1",
+            "-ss", seek, "-i", path, "-frames:v", "1",
+            "-vf", "scale=160:90:force_original_aspect_ratio=decrease",
+            "-y", output
+        }, 15000);
+
+        const bool succeeded = QFileInfo::exists(output) && QFileInfo(output).size() > 0;
+        if (!succeeded) QFile::remove(output);
+        if (!guardedThis) return;
+
+        QMetaObject::invokeMethod(guardedThis.data(), [guardedThis, key, succeeded]() {
+            if (!guardedThis) return;
+            {
+                QMutexLocker lock(&guardedThis->m_thumbnailMutex);
+                guardedThis->m_pendingThumbnails.remove(key);
+                if (!succeeded)
+                    guardedThis->m_failedThumbnails.insert(key);
+            }
+            if (succeeded) {
+                ++guardedThis->m_thumbnailRevision;
+                emit guardedThis->thumbnailRevisionChanged();
+            }
+        }, Qt::QueuedConnection);
+    }));
     return {};
 }
