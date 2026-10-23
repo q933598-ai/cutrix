@@ -378,11 +378,19 @@ ApplicationWindow {
                 mediaPlayer.pause()
                 return
             }
-            // Позиция монтажа — единые часы. Не привязываем её к позиции
-            // отдельного MediaPlayer: иначе смена клипа или пауза на пустом
-            // участке останавливает весь монтаж.
-            root.timelinePosition = Math.min(root.timelineDuration,
-                                             root.timelinePosition + interval / 1000)
+            // When a clip is actually playing, use its real decoder position
+            // as the timeline clock. A fixed timer increment drifts from video/audio.
+            var currentClip = root.timelineVideoAt(root.timelinePosition)
+            if (currentClip
+                    && String(currentClip.url) === String(root.timelinePreviewUrl)
+                    && mediaPlayer.playbackState === MediaPlayer.PlayingState
+                    && root.timelineSeekPending < 0) {
+                root.timelinePosition = Number(currentClip.start || 0) + mediaPlayer.position / 1000
+            } else {
+                // Keep the timeline moving across gaps and while the next source loads.
+                root.timelinePosition = Math.min(root.timelineDuration,
+                                                 root.timelinePosition + interval / 1000)
+            }
             if (root.timelinePosition >= root.timelineDuration) {
                 root.timelinePosition = root.timelineDuration
                 stop()
