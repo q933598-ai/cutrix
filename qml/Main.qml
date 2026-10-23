@@ -1290,7 +1290,11 @@ ApplicationWindow {
                                                             return start < otherEnd && start + duration > otherStart
                                                         })
                                                     }
-                                                    if (overlapsAt(desiredStart)) {
+                                                    // Moving to another track is an intentional overlay (for example,
+                                                    // the same source clip on V1 and V2). Only prevent collisions
+                                                    // when the clip stays on its current track.
+                                                    if (targetTrack === Number(updated[movingIndex].track)
+                                                            && overlapsAt(desiredStart)) {
                                                         var step = desiredStart >= dragStartTimeline ? 1 : -1
                                                         var candidate = desiredStart
                                                         var attempts = 0
