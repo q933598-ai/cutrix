@@ -41,7 +41,7 @@ ApplicationWindow {
         var end = 0
         for (var i = 0; i < mediaFiles.length; ++i) {
             if (Number(mediaFiles[i].track) >= 0)
-                end = Math.max(end, Number(mediaFiles[i].start || 0) + Number(mediaFiles[i].duration || 0))
+                end = Math.max(end, Number(mediaFiles[i].start || 0) + Math.max(1, Number(mediaFiles[i].duration || 36)))
         }
         return end
     }
@@ -1179,7 +1179,7 @@ ApplicationWindow {
                                             id: timelineClip
                                             required property var modelData
                                             x: Math.max(0, Number(modelData.start || 0) * timelineScale)
-                                            width: Math.max(3, Number(modelData.duration || 0) * timelineScale)
+                                            width: Math.max(3, Number(modelData.duration || 36) * timelineScale)
                                             height: 30
                                             y: 2
                                             clip: true
