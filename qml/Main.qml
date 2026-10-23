@@ -16,6 +16,8 @@ ApplicationWindow {
     property string currentTheme: "Tokyo Night"
     property string selectedMedia: "city.mp4"
     property bool isPlaying: false
+    property bool settingsOpen: false
+    property int uiFontScale: 100
     property string statusMessage: "Готово · UI-прототип · проект не сохранён"
 
     readonly property var palettes: ({
@@ -25,28 +27,6 @@ ApplicationWindow {
         "Rosé Pine": { background: "#191724", panel: "#1f1d2e", panelAlt: "#26233a", border: "#403d52", text: "#e0def4", muted: "#908caa", accent: "#c4a7e7", accent2: "#ebbcba", green: "#9ccfd8" }
     })
     readonly property var theme: palettes[currentTheme]
-
-    header: Rectangle {
-        implicitHeight: 44
-        color: theme.panel
-        border.color: theme.border
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 14
-            anchors.rightMargin: 12
-            Text { text: "◆ Cutrix"; color: theme.accent; font.family: "monospace"; font.pixelSize: 19; font.bold: true }
-            Text { text: "PIXEL VIDEO EDITOR / v0.1.0"; color: theme.muted; font.family: "monospace"; font.pixelSize: 11; Layout.fillWidth: true }
-            ComboBox {
-                model: ["Tokyo Night", "Everforest", "Catppuccin", "Rosé Pine"]
-                currentIndex: model.indexOf(root.currentTheme)
-                onActivated: root.currentTheme = currentText
-                implicitWidth: 165
-                palette.text: theme.text
-                palette.buttonText: theme.text
-                background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
-            }
-        }
-    }
 
     menuBar: MenuBar {
         Menu {
@@ -94,6 +74,100 @@ ApplicationWindow {
         background: Rectangle { color: theme.panel; border.color: theme.border }
     }
 
+    Dialog {
+        id: settingsDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        width: 520
+        height: 430
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: root.settingsOpen = true
+        onClosed: root.settingsOpen = false
+
+        background: Rectangle {
+            color: theme.background
+            border.color: theme.accent
+            border.width: 2
+            radius: 0
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 44
+                color: theme.panel
+                border.color: theme.border
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 8
+                    Text {
+                        text: "◆ CUTRIX / НАСТРОЙКИ"
+                        color: theme.accent
+                        font.family: "monospace"
+                        font.pixelSize: 15
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    Button {
+                        text: "×"
+                        onClicked: settingsDialog.close()
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.margins: 18
+                spacing: 14
+
+                Text { text: "ВНЕШНИЙ ВИД"; color: theme.accent; font.family: "monospace"; font.pixelSize: 14; font.bold: true }
+                Text { text: "Цветовая тема"; color: theme.text; font.family: "monospace"; font.pixelSize: 13 }
+                ComboBox {
+                    Layout.fillWidth: true
+                    model: ["Tokyo Night", "Everforest", "Catppuccin", "Rosé Pine"]
+                    currentIndex: model.indexOf(root.currentTheme)
+                    onActivated: root.currentTheme = currentText
+                    palette.text: theme.text
+                    palette.buttonText: theme.text
+                    background: Rectangle { color: theme.panel; border.color: theme.accent; radius: 0 }
+                }
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                Text { text: "Размер текста интерфейса"; color: theme.text; font.family: "monospace"; font.pixelSize: 13 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Slider {
+                        Layout.fillWidth: true
+                        from: 100
+                        to: 130
+                        stepSize: 5
+                        value: root.uiFontScale
+                        onMoved: root.uiFontScale = value
+                    }
+                    Text { text: root.uiFontScale + "%"; color: theme.accent; font.family: "monospace"; font.pixelSize: 13 }
+                }
+                Text {
+                    text: "Пример: МЕДИАФАЙЛЫ · Настройки · city.mp4"
+                    color: theme.muted
+                    font.family: "monospace"
+                    font.pixelSize: 12 * root.uiFontScale / 100
+                    wrapMode: Text.WordWrap
+                }
+
+                Item { Layout.fillHeight: true }
+                Text { text: "Изменения темы применяются сразу."; color: theme.muted; font.family: "monospace"; font.pixelSize: 11 }
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
@@ -119,14 +193,22 @@ ApplicationWindow {
                             required property var modelData
                             width: parent.width
                             height: 39
-                            color: modelData[1] === "Медиа" ? theme.panelAlt : "transparent"
-                            border.color: modelData[1] === "Медиа" ? theme.border : "transparent"
+                            color: modelData[1] === "Медиа" || (modelData[1] === "Настройки" && root.settingsOpen) ? theme.panelAlt : "transparent"
+                            border.color: modelData[1] === "Медиа" || (modelData[1] === "Настройки" && root.settingsOpen) ? theme.border : "transparent"
                             Row {
                                 anchors.fill: parent
                                 anchors.leftMargin: 7
                                 spacing: 8
-                                Text { text: modelData[0]; color: theme.accent; font.family: "monospace"; font.pixelSize: 17; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: modelData[1]; color: theme.text; font.family: "monospace"; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: modelData[0]; color: theme.accent; font.family: "monospace"; font.pixelSize: 19; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: modelData[1]; color: theme.text; font.family: "monospace"; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (modelData[1] === "Настройки") settingsDialog.open()
+                                    else root.statusMessage = modelData[1] + " — раздел пока в разработке"
+                                }
                             }
                         }
                     }
@@ -179,8 +261,8 @@ ApplicationWindow {
                                         color: modelData[3]
                                         Text { anchors.centerIn: parent; text: modelData[0]; color: "#e5e9ff"; font.pixelSize: 26; font.family: "monospace" }
                                     }
-                                    Text { anchors.left: parent.left; anchors.leftMargin: 4; text: modelData[1]; color: theme.text; font.family: "monospace"; font.pixelSize: 9; elide: Text.ElideRight; width: parent.width - 8 }
-                                    Text { anchors.left: parent.left; anchors.leftMargin: 4; text: modelData[2]; color: theme.muted; font.family: "monospace"; font.pixelSize: 9 }
+                                    Text { anchors.left: parent.left; anchors.leftMargin: 4; text: modelData[1]; color: theme.text; font.family: "monospace"; font.pixelSize: 13; elide: Text.ElideRight; width: parent.width - 8 }
+                                    Text { anchors.left: parent.left; anchors.leftMargin: 4; text: modelData[2]; color: theme.muted; font.family: "monospace"; font.pixelSize: 13 }
                                 }
                                 MouseArea {
                                     anchors.fill: parent
@@ -190,7 +272,7 @@ ApplicationWindow {
                         }
                     }
                     Item { Layout.fillHeight: true }
-                    Text { text: "Демо-элементы · не реальные файлы"; color: theme.muted; font.family: "monospace"; font.pixelSize: 9; wrapMode: Text.WordWrap }
+                    Text { text: "Демо-элементы · не реальные файлы"; color: theme.muted; font.family: "monospace"; font.pixelSize: 13; wrapMode: Text.WordWrap }
                 }
             }
 
@@ -208,7 +290,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Text { text: "ПРЕДПРОСМОТР"; color: theme.accent; font.family: "monospace"; font.bold: true }
                         Item { Layout.fillWidth: true }
-                        Text { text: "16:9 · 1080p"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+                        Text { text: "16:9 · 1080p"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
                     }
                     Rectangle {
                         Layout.fillWidth: true
@@ -250,12 +332,12 @@ ApplicationWindow {
                         Column {
                             anchors.centerIn: parent
                             Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CUTRIX"; color: "#ffffff"; font.family: "monospace"; font.pixelSize: 22; font.bold: true }
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Предпросмотр появится здесь"; color: "#d7e2ff"; font.family: "monospace"; font.pixelSize: 10 }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Предпросмотр появится здесь"; color: "#d7e2ff"; font.family: "monospace"; font.pixelSize: 12 }
                         }
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "00:00:07:15 / 00:00:32:08"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+                        Text { text: "00:00:07:15 / 00:00:32:08"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
                         Item { Layout.fillWidth: true }
                         Button {
                             text: root.isPlaying ? "Ⅱ Пауза" : "▶ Воспроизвести"
@@ -277,33 +359,33 @@ ApplicationWindow {
                     anchors.margins: 9
                     spacing: 9
                     Text { text: "СВОЙСТВА"; color: theme.accent; font.family: "monospace"; font.bold: true }
-                    Text { text: root.selectedMedia; color: theme.text; font.family: "monospace"; font.pixelSize: 11 }
+                    Text { text: root.selectedMedia; color: theme.text; font.family: "monospace"; font.pixelSize: 13 }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                    Text { text: "ПОЗИЦИЯ И МАСШТАБ"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+                    Text { text: "ПОЗИЦИЯ И МАСШТАБ"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
                     Repeater {
                         model: [["X", "0.0"], ["Y", "0.0"], ["Масштаб", "100%"], ["Поворот", "0°"]]
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
-                            Text { text: modelData[0]; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.fillWidth: true }
-                            Text { text: modelData[1]; color: theme.accent; font.family: "monospace"; font.pixelSize: 10 }
+                            Text { text: modelData[0]; color: theme.text; font.family: "monospace"; font.pixelSize: 12; Layout.fillWidth: true }
+                            Text { text: modelData[1]; color: theme.accent; font.family: "monospace"; font.pixelSize: 12 }
                         }
                     }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                    Text { text: "ЦВЕТОКОРРЕКЦИЯ"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+                    Text { text: "ЦВЕТОКОРРЕКЦИЯ"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
                     Repeater {
                         model: ["Яркость", "Контраст", "Насыщенность"]
                         delegate: ColumnLayout {
                             required property string modelData
                             Layout.fillWidth: true
-                            Text { text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                            Text { text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: 12 }
                             Slider { Layout.fillWidth: true; from: -1; to: 1; value: 0 }
                         }
                     }
                     Item { Layout.fillHeight: true }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text { text: "ЭКСПОРТ"; color: theme.accent; font.family: "monospace"; font.bold: true }
-                    Text { text: "MP4 · H.264 · 1920×1080"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; wrapMode: Text.WordWrap }
+                    Text { text: "MP4 · H.264 · 1920×1080"; color: theme.text; font.family: "monospace"; font.pixelSize: 12; wrapMode: Text.WordWrap }
                     Button {
                         text: "↗ Экспорт (скоро)"
                         Layout.fillWidth: true
@@ -328,7 +410,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Text { text: "↶  ↷   ✂   ◫   ✦"; color: theme.accent; font.family: "monospace"; font.pixelSize: 18 }
                     Item { Layout.fillWidth: true }
-                    Text { text: "МАСШТАБ  − ━━━━━●━━ +"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+                    Text { text: "МАСШТАБ  − ━━━━━●━━ +"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -346,7 +428,7 @@ ApplicationWindow {
                                 height: 31
                                 color: theme.panelAlt
                                 border.color: theme.border
-                                Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                                Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: 12 }
                             }
                         }
                     }
@@ -371,7 +453,7 @@ ApplicationWindow {
                                             text: "00:" + (index * 5).toString().padStart(2, "0")
                                             color: theme.muted
                                             font.family: "monospace"
-                                            font.pixelSize: 10
+                                            font.pixelSize: 12
                                             verticalAlignment: Text.AlignVCenter
                                         }
                                     }
@@ -399,7 +481,7 @@ ApplicationWindow {
                                             color: modelData.c
                                             border.color: Qt.lighter(modelData.c, 1.25)
                                             radius: 2
-                                            Text { anchors.fill: parent; anchors.leftMargin: 5; text: modelData.t; color: "#f0f2ff"; font.family: "monospace"; font.pixelSize: 10; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                                            Text { anchors.fill: parent; anchors.leftMargin: 5; text: modelData.t; color: "#f0f2ff"; font.family: "monospace"; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                                         }
                                     }
                                 }
@@ -425,9 +507,9 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 10
             anchors.rightMargin: 10
-            Text { text: "●"; color: theme.green; font.pixelSize: 10 }
-            Text { text: root.statusMessage; color: theme.muted; font.family: "monospace"; font.pixelSize: 10; Layout.fillWidth: true; elide: Text.ElideRight }
-            Text { text: "Linux · Qt 6 · C++20"; color: theme.muted; font.family: "monospace"; font.pixelSize: 10 }
+            Text { text: "●"; color: theme.green; font.pixelSize: 12 }
+            Text { text: root.statusMessage; color: theme.muted; font.family: "monospace"; font.pixelSize: 12; Layout.fillWidth: true; elide: Text.ElideRight }
+            Text { text: "Linux · Qt 6 · C++20"; color: theme.muted; font.family: "monospace"; font.pixelSize: 12 }
         }
     }
 }
