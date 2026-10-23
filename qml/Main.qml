@@ -1068,6 +1068,7 @@ ApplicationWindow {
                                     }
                                 }
                             }
+                        }
                         Rectangle {
                             x: parent.width * 0.34
                             y: 20
