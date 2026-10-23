@@ -12,4 +12,5 @@ public:
 
     Q_INVOKABLE QVariantMap inspect(const QString &url) const;
     Q_INVOKABLE QString thumbnail(const QString &url) const;
+    Q_INVOKABLE QString thumbnailAt(const QString &url, double seconds) const;
 };
