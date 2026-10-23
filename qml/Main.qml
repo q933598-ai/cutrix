@@ -44,6 +44,7 @@ ApplicationWindow {
         return end
     }
     property string timelinePreviewUrl: ""
+    property bool timelinePreviewActive: false
     property real timelineSeekPending: -1
 
     function timelineVideoAt(seconds) {
@@ -59,10 +60,10 @@ ApplicationWindow {
     }
     function updateTimelinePreview(seconds) {
         var clip = timelineVideoAt(seconds)
+        timelinePreviewActive = true
         if (!clip) {
             mediaPlayer.pause()
             timelinePreviewUrl = ""
-            mediaPlayer.source = ""
             return
         }
         var url = String(clip.url)
@@ -71,7 +72,6 @@ ApplicationWindow {
             mediaPlayer.pause()
             timelinePreviewUrl = url
             timelineSeekPending = offset
-            mediaPlayer.source = clip.url
         } else {
             var target = offset * 1000
             if (Math.abs(mediaPlayer.position - target) > 120) mediaPlayer.position = target
@@ -342,7 +342,6 @@ ApplicationWindow {
             if (!clip) {
                 mediaPlayer.pause()
                 root.timelinePreviewUrl = ""
-                mediaPlayer.source = ""
             } else if (String(clip.url) !== String(root.timelinePreviewUrl)) {
                 root.updateTimelinePreview(root.timelinePosition)
             } else if (mediaPlayer.playbackState !== MediaPlayer.PlayingState) {
@@ -353,7 +352,7 @@ ApplicationWindow {
 
     MediaPlayer {
         id: mediaPlayer
-        source: root.timelinePreviewUrl !== "" ? root.timelinePreviewUrl : root.selectedMediaUrl
+        source: root.timelinePreviewActive ? root.timelinePreviewUrl : root.selectedMediaUrl
         videoOutput: videoOutput
         audioOutput: AudioOutput {}
         onPlaybackStateChanged: root.isPlaying = playbackState === MediaPlayer.PlayingState
@@ -974,8 +973,7 @@ ApplicationWindow {
                                     root.updateTimelinePreview(root.timelinePosition)
                                     timelinePlaybackTimer.start()
                                 } else {
-                                    root.timelinePreviewUrl = ""
-                                    mediaPlayer.source = root.selectedMediaUrl
+                                    root.timelinePreviewActive = false
                                     mediaPlayer.play()
                                 }
                             }
@@ -1160,14 +1158,28 @@ ApplicationWindow {
                                                 drag.axis: Drag.XAxis
                                                 onReleased: {
                                                     var updated = root.mediaFiles.slice()
+                                                    var movingIndex = -1
                                                     for (var i = 0; i < updated.length; ++i) {
                                                         if (String(updated[i].url) === String(timelineClip.modelData.url)) {
-                                                            updated[i] = Object.assign({}, updated[i], {
-                                                                start: Math.max(0, Math.round(timelineClip.x / 3))
-                                                            })
+                                                            movingIndex = i
                                                             break
                                                         }
                                                     }
+                                                    if (movingIndex < 0) return
+                                                    var newStart = Math.max(0, Math.round(timelineClip.x / 3))
+                                                    var movingDuration = Number(updated[movingIndex].duration || 36)
+                                                    var collision = updated.some(function(item, index) {
+                                                        if (index === movingIndex || Number(item.track) !== Number(updated[movingIndex].track)) return false
+                                                        var otherStart = Number(item.start || 0)
+                                                        var otherEnd = otherStart + Number(item.duration || 36)
+                                                        return newStart < otherEnd && newStart + movingDuration > otherStart
+                                                    })
+                                                    if (collision) {
+                                                        timelineClip.x = Number(timelineClip.modelData.start || 0) * 3
+                                                        root.statusMessage = "Нельзя наложить клипы друг на друга на одной дорожке"
+                                                        return
+                                                    }
+                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: newStart })
                                                     root.mediaFiles = updated
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
