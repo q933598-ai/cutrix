@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtMultimedia
 
 ApplicationWindow {
     id: root
@@ -17,6 +18,12 @@ ApplicationWindow {
     property string selectedMedia: ""
     property var mediaFiles: []
     property bool isPlaying: false
+    property string playbackError: ""
+    property var selectedMediaUrl: {
+        for (var i = 0; i < mediaFiles.length; ++i)
+            if (mediaFiles[i].name === selectedMedia) return mediaFiles[i].url
+        return ""
+    }
     property bool settingsOpen: false
     property int uiFontScale: 100
     property string statusMessage: "Готово · UI-прототип · проект не сохранён"
@@ -162,11 +169,27 @@ ApplicationWindow {
         }
         Menu {
             title: "Воспроизведение"
-            Action { text: root.isPlaying ? "Пауза" : "Воспроизвести"; onTriggered: root.isPlaying = !root.isPlaying }
+            Action { text: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Пауза" : "Воспроизвести"; enabled: root.selectedMediaUrl !== ""; onTriggered: { if (mediaPlayer.playbackState === MediaPlayer.PlayingState) mediaPlayer.pause(); else mediaPlayer.play() } }
         }
         Menu {
             title: "Справка"
             Action { text: "О Cutrix"; onTriggered: aboutDialog.open() }
+        }
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+        source: root.selectedMediaUrl
+        videoOutput: videoOutput
+        audioOutput: AudioOutput {}
+        onPlaybackStateChanged: root.isPlaying = playbackState === MediaPlayer.PlayingState
+        onErrorOccurred: function(error, errorString) {
+            root.playbackError = errorString
+            root.statusMessage = "Ошибка воспроизведения: " + errorString
+        }
+        onSourceChanged: {
+            root.playbackError = ""
+            root.isPlaying = false
         }
     }
 
@@ -461,8 +484,17 @@ ApplicationWindow {
                         color: "#10182d"
                         border.color: theme.border
                         clip: true
+
+                        VideoOutput {
+                            id: videoOutput
+                            anchors.fill: parent
+                            fillMode: VideoOutput.PreserveAspectFit
+                            visible: mediaPlayer.hasVideo
+                        }
+
                         Canvas {
                             anchors.fill: parent
+                            visible: !mediaPlayer.hasVideo
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
@@ -488,23 +520,44 @@ ApplicationWindow {
                                 }
                                 ctx.fillStyle = "#0b1830"
                                 ctx.fillRect(0, height * 0.82, width, height * 0.18)
-                                ctx.fillStyle = "#1e4b7c"
-                                for (var r = 0; r < 6; r++) ctx.fillRect(width * 0.2 + r * 9, height * 0.85 + r * 5, width * 0.55 - r * 18, 2)
                             }
                         }
+
                         Column {
                             anchors.centerIn: parent
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CUTRIX"; color: "#ffffff"; font.family: "monospace"; font.pixelSize: (22 * root.uiFontScale / 100); font.bold: true }
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Предпросмотр появится здесь"; color: "#d7e2ff"; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                            spacing: 8
+                            visible: !mediaPlayer.hasVideo
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.selectedMedia === "" ? "CUTRIX" : root.selectedMedia
+                                color: "#ffffff"
+                                font.family: "monospace"
+                                font.pixelSize: 18 * root.uiFontScale / 100
+                                font.bold: true
+                                elide: Text.ElideMiddle
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.selectedMedia === "" ? "Импортируй видео для предпросмотра" :
+                                      mediaPlayer.errorString !== "" ? mediaPlayer.errorString :
+                                      "Ожидание видеопотока…"
+                                color: "#d7e2ff"
+                                font.family: "monospace"
+                                font.pixelSize: 12 * root.uiFontScale / 100
+                            }
                         }
                     }
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { text: "00:00:07:15 / 00:00:32:08"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                        Text { text: mediaPlayer.position >= 0 ? Qt.formatTime(mediaPlayer.position / 1000, "mm:ss") + " / " + Qt.formatTime(mediaPlayer.duration / 1000, "mm:ss") : "00:00 / 00:00"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                         Item { Layout.fillWidth: true }
                         Button {
-                            text: root.isPlaying ? "Ⅱ Пауза" : "▶ Воспроизвести"
-                            onClicked: root.isPlaying = !root.isPlaying
+                            text: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Ⅱ Пауза" : "▶ Воспроизвести"
+                            enabled: root.selectedMediaUrl !== ""
+                            onClicked: {
+                                if (mediaPlayer.playbackState === MediaPlayer.PlayingState) mediaPlayer.pause()
+                                else mediaPlayer.play()
+                            }
                             palette.buttonText: theme.text
                             background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                         }
