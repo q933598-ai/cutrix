@@ -46,9 +46,11 @@ ApplicationWindow {
         return end
     }
     property string timelinePreviewUrl: ""
+    property string timelinePreviewClipId: ""
     property real timelinePreviewClipStart: -1
     property bool timelinePreviewActive: false
     property real timelineSeekPending: -1
+    property int timelineClipSerial: 0
 
     function formatTime(seconds) {
         var value = Number(seconds)
@@ -63,6 +65,110 @@ ApplicationWindow {
     function saveTimelineMedia(items) {
         if (currentProjectPath !== "")
             projectStore.saveProjectMedia(currentProjectPath, items)
+    }
+
+    // A stable ID distinguishes two instances of the same source file on the timeline.
+    function createTimelineClipId() {
+        timelineClipSerial += 1
+        return "clip-" + Date.now() + "-" + timelineClipSerial
+    }
+
+    function timelineClipDuration(item) {
+        var value = Number(item.duration)
+        return isFinite(value) && value > 0 ? value : 36
+    }
+
+    function timelineClipById(id) {
+        if (String(id || "") === "") return null
+        for (var i = 0; i < mediaFiles.length; ++i) {
+            if (Number(mediaFiles[i].track) >= 0
+                    && String(mediaFiles[i].clipId || "") === String(id))
+                return mediaFiles[i]
+        }
+        return null
+    }
+
+    // Migrate old projects, assign IDs, and repair any already-overlapping clips.
+    // Intervals are [start, end), so clips can touch without overlapping.
+    function normalizeTimelineMedia(items) {
+        var result = []
+        var usedIds = ({})
+        for (var i = 0; i < items.length; ++i) {
+            var item = Object.assign({}, items[i])
+            if (Number(item.track) >= 0) {
+                var id = String(item.clipId || "")
+                if (id === "" || usedIds[id]) id = createTimelineClipId()
+                item.clipId = id
+                usedIds[id] = true
+                var rawStart = Number(item.start)
+                item.start = isFinite(rawStart) ? Math.max(0, rawStart) : 0
+                item.duration = timelineClipDuration(item)
+            }
+            result.push(item)
+        }
+
+        var order = []
+        for (var j = 0; j < result.length; ++j) {
+            if (Number(result[j].track) >= 0) order.push(j)
+        }
+        order.sort(function(a, b) {
+            var trackDifference = Number(result[a].track) - Number(result[b].track)
+            if (trackDifference !== 0) return trackDifference
+            var startDifference = Number(result[a].start) - Number(result[b].start)
+            return startDifference !== 0 ? startDifference : a - b
+        })
+
+        var placed = []
+        for (var k = 0; k < order.length; ++k) {
+            var index = order[k]
+            var clip = result[index]
+            var start = Number(clip.start)
+            var duration = timelineClipDuration(clip)
+            var blockers = placed.filter(function(other) {
+                return Number(other.track) === Number(clip.track)
+            })
+            blockers.sort(function(a, b) { return Number(a.start) - Number(b.start) })
+            for (var b = 0; b < blockers.length; ++b) {
+                var otherStart = Number(blockers[b].start)
+                var otherEnd = otherStart + timelineClipDuration(blockers[b])
+                if (start < otherEnd && start + duration > otherStart)
+                    start = otherEnd
+            }
+            clip.start = start
+            clip.duration = duration
+            result[index] = clip
+            placed.push(clip)
+        }
+        return result
+    }
+
+    // Shared by drag-and-drop and clip movement so neither path can place
+    // two clips over each other on the same track.
+    function findFreeTimelineStart(track, desiredStart, duration, excludedClipId) {
+        var requested = Number(desiredStart)
+        var start = isFinite(requested) ? Math.max(0, requested) : 0
+        var clipDuration = Number(duration)
+        if (!isFinite(clipDuration) || clipDuration <= 0) clipDuration = 36
+        var blockers = []
+        for (var i = 0; i < mediaFiles.length; ++i) {
+            var item = mediaFiles[i]
+            if (Number(item.track) !== Number(track)) continue
+            if (String(excludedClipId || "") !== ""
+                    && String(item.clipId || "") === String(excludedClipId))
+                continue
+            var otherStartValue = Number(item.start)
+            var otherStart = isFinite(otherStartValue) ? Math.max(0, otherStartValue) : 0
+            blockers.push({
+                start: otherStart,
+                end: otherStart + timelineClipDuration(item)
+            })
+        }
+        blockers.sort(function(a, b) { return a.start - b.start })
+        for (var j = 0; j < blockers.length; ++j) {
+            if (start < blockers[j].end && start + clipDuration > blockers[j].start)
+                start = blockers[j].end
+        }
+        return start
     }
 
     function timelineVideoAt(seconds) {
@@ -82,6 +188,8 @@ ApplicationWindow {
         mediaPlayer.pause()
         timelinePreviewActive = false
         timelinePreviewUrl = ""
+        timelinePreviewClipId = ""
+        timelinePreviewClipStart = -1
         timelineSeekPending = -1
         selectedMedia = name
         statusMessage = "Выбран файл: " + name
@@ -92,6 +200,8 @@ ApplicationWindow {
         timelinePlaybackTimer.stop()
         timelinePreviewActive = false
         timelinePreviewUrl = ""
+        timelinePreviewClipId = ""
+        timelinePreviewClipStart = -1
         timelineSeekPending = -1
         mediaPlayer.stop()
         // Источник задаётся binding-ом MediaPlayer.source выше; не разрываем его прямым присваиванием.
@@ -105,28 +215,52 @@ ApplicationWindow {
         if (!clip) {
             mediaPlayer.pause()
             timelinePreviewUrl = ""
+            timelinePreviewClipId = ""
             timelinePreviewClipStart = -1
             timelineSeekPending = -1
             return
         }
+
         var url = String(clip.url)
+        var clipId = String(clip.clipId || "")
         var clipStart = Number(clip.start || 0)
         var offset = Math.max(0, seconds - clipStart)
-        if (url !== String(timelinePreviewUrl)) {
+
+        // Switch by timeline-instance ID, not only by URL. Two clips can use
+        // the same file but still require a seek back to their own in-point.
+        if (url !== String(timelinePreviewUrl) || clipId !== String(timelinePreviewClipId)) {
             mediaPlayer.pause()
             timelinePreviewUrl = url
-            timelinePreviewClipStart = clipStart
-            timelineSeekPending = offset
-        } else if (clipStart !== Number(timelinePreviewClipStart)) {
-            // Same source, different timeline instance: pause and perform an explicit
-            // seek before allowing the playback timer to advance the playhead.
-            mediaPlayer.pause()
+            timelinePreviewClipId = clipId
             timelinePreviewClipStart = clipStart
             timelineSeekPending = offset
         } else {
             var target = offset * 1000
-            if (Math.abs(mediaPlayer.position - target) > 120) mediaPlayer.position = target
+            if (Math.abs(mediaPlayer.position - target) > 120)
+                mediaPlayer.position = target
         }
+    }
+
+    function handleTimelineEndOfMedia() {
+        if (!timelinePlaybackTimer.running) return
+
+        // EndOfMedia is a real transition, not a normal stopped state. Move
+        // to the end of the clip that actually finished, even if the timer's
+        // playhead is a few milliseconds behind the decoder.
+        var endedClip = timelineClipById(timelinePreviewClipId)
+        if (endedClip) {
+            var clipEnd = Number(endedClip.start || 0) + timelineClipDuration(endedClip)
+            if (timelinePosition < clipEnd)
+                timelinePosition = clipEnd
+        }
+
+        if (timelinePosition >= timelineDuration) {
+            timelinePosition = timelineDuration
+            timelinePlaybackTimer.stop()
+            mediaPlayer.pause()
+            return
+        }
+        updateTimelinePreview(timelinePosition)
     }
 
     readonly property var palettes: ({
@@ -142,7 +276,10 @@ ApplicationWindow {
         if (!projectStore.openProject(path)) { statusMessage = projectStore.lastError(); return }
         currentProjectPath = path
         currentProjectName = name || path.split("/").pop().replace(/\.cutrix$/, "")
-        mediaFiles = projectStore.projectMedia(path)
+        var savedMedia = projectStore.projectMedia(path)
+        mediaFiles = normalizeTimelineMedia(savedMedia)
+        if (JSON.stringify(mediaFiles) !== JSON.stringify(savedMedia))
+            projectStore.saveProjectMedia(path, mediaFiles)
         selectedMedia = mediaFiles.length > 0 ? mediaFiles[0].name : ""
         refreshProjects()
         statusMessage = "Открыт проект: " + currentProjectName
@@ -388,46 +525,51 @@ ApplicationWindow {
                 mediaPlayer.pause()
                 return
             }
+
             var currentClip = root.timelineVideoAt(root.timelinePosition)
             if (currentClip) {
-                // A seek can be pending even when the source URL did not change
-                // (two timeline clips may reference the same file).
-                if (root.timelineSeekPending >= 0
-                        && String(currentClip.url) === String(root.timelinePreviewUrl)
-                        && Number(currentClip.start || 0) === Number(root.timelinePreviewClipStart)
-                        && (mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
-                            || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia)) {
-                    var seekTarget = root.timelineSeekPending * 1000
-                    mediaPlayer.position = seekTarget
-                    root.timelineSeekPending = -1
-                    mediaPlayer.play()
-                    return
-                }
-                // Do not advance the playhead while the decoder switches to this clip.
-                // Otherwise the timeline can pass the entire clip before it starts playing.
-                if (String(currentClip.url) !== String(root.timelinePreviewUrl)
-                        || Number(currentClip.start || 0) !== Number(root.timelinePreviewClipStart)
-                        || root.timelineSeekPending >= 0
-                        || (mediaPlayer.mediaStatus !== MediaPlayer.LoadedMedia
-                            && mediaPlayer.mediaStatus !== MediaPlayer.BufferedMedia)) {
+                var currentId = String(currentClip.clipId || "")
+                var sameClip = currentId !== "" && currentId === String(root.timelinePreviewClipId)
+                var sameSource = String(currentClip.url) === String(root.timelinePreviewUrl)
+                if (!sameClip || !sameSource) {
                     root.updateTimelinePreview(root.timelinePosition)
                     return
                 }
-                if (mediaPlayer.playbackState === MediaPlayer.PlayingState) {
-                    // Keep the montage playhead moving independently from the decoder.
-                    // At EndOfMedia, Qt can leave position at the end of the current file;
-                    // using that position as the timeline clock traps playback on one clip.
-                    root.timelinePosition = Math.min(root.timelineDuration,
-                                                     root.timelinePosition + interval / 1000)
-                } else {
+
+                var decoderReady = mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
+                    || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia
+                    || (mediaPlayer.mediaStatus === MediaPlayer.EndOfMedia && sameSource)
+
+                if (root.timelineSeekPending >= 0) {
+                    // EndOfMedia is seekable when the next timeline instance uses
+                    // the same source file; otherwise wait for source loading.
+                    if (decoderReady) {
+                        mediaPlayer.position = root.timelineSeekPending * 1000
+                        root.timelineSeekPending = -1
+                        mediaPlayer.play()
+                    }
+                    return
+                }
+
+                if (mediaPlayer.mediaStatus === MediaPlayer.EndOfMedia) {
+                    root.handleTimelineEndOfMedia()
+                    return
+                }
+                if (!decoderReady) return
+                if (mediaPlayer.playbackState !== MediaPlayer.PlayingState) {
                     mediaPlayer.play()
                     return
                 }
+
+                root.timelinePosition = Math.min(root.timelineDuration,
+                                                 root.timelinePosition + interval / 1000)
             } else {
-                // Empty timeline gaps advance in timeline time, not decoder time.
+                // Empty gaps still consume timeline time; the playhead must not
+                // depend on the last decoded frame's position.
                 root.timelinePosition = Math.min(root.timelineDuration,
                                                  root.timelinePosition + interval / 1000)
             }
+
             if (root.timelinePosition >= root.timelineDuration) {
                 root.timelinePosition = root.timelineDuration
                 stop()
@@ -454,7 +596,9 @@ ApplicationWindow {
             if (source.toString() !== "") root.statusMessage = "Загружаю видео: " + root.selectedMedia
         }
         onMediaStatusChanged: {
-            if (mediaStatus === MediaPlayer.LoadedMedia
+            if (mediaStatus === MediaPlayer.EndOfMedia) {
+                root.handleTimelineEndOfMedia()
+            } else if (mediaStatus === MediaPlayer.LoadedMedia
                     || mediaStatus === MediaPlayer.BufferedMedia) {
                 if (root.timelineSeekPending >= 0) {
                     mediaPlayer.position = root.timelineSeekPending * 1000
@@ -1290,10 +1434,8 @@ ApplicationWindow {
                                                     var updated = root.mediaFiles.slice()
                                                     var movingIndex = -1
                                                     for (var i = 0; i < updated.length; ++i) {
-                                                        if (String(updated[i].url) === String(timelineClip.modelData.url)
-                                                                && Number(updated[i].track) === Number(timelineClip.modelData.track)
-                                                                && Number(updated[i].start || 0) === Number(timelineClip.modelData.start || 0)
-                                                                && String(updated[i].name) === String(timelineClip.modelData.name)) {
+                                                        if (String(updated[i].clipId || "") !== ""
+                                                                && String(updated[i].clipId) === String(timelineClip.modelData.clipId)) {
                                                             movingIndex = i
                                                             break
                                                         }
@@ -1303,50 +1445,24 @@ ApplicationWindow {
                                                         return
                                                     }
 
-                                                    var duration = Math.max(1, Number(updated[movingIndex].duration || 36))
+                                                    var duration = root.timelineClipDuration(updated[movingIndex])
                                                     var desiredStart = Math.max(0, Math.round(timelineClip.x / Math.max(0.001, timelineCanvas.timelineScale)))
-                                                    // Snap vertically to one of the four tracks using the pointer position
-                                                    // in the fixed canvas, not the clip's temporary y coordinate.
-                                                    var targetTrack = Math.max(0, Math.min(3, Math.round((scenePos.y - 42) / 37)))
-                                                    var obstacles = updated.filter(function(item, index) {
-                                                        return index !== movingIndex && Number(item.track) === targetTrack
+                                                    // The track rows start at y=25 and repeat every 37 pixels.
+                                                    var targetTrack = Math.max(0, Math.min(3, Math.floor((scenePos.y - 23.5) / 37)))
+                                                    var clipId = String(updated[movingIndex].clipId || "")
+                                                    var placedStart = root.findFreeTimelineStart(targetTrack, desiredStart, duration, clipId)
+                                                    var didSnap = Math.abs(placedStart - desiredStart) > 0.001
+                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], {
+                                                        start: placedStart,
+                                                        track: targetTrack
                                                     })
-                                                    var overlapsAt = function(start) {
-                                                        return obstacles.some(function(item) {
-                                                            var otherStart = Math.max(0, Number(item.start || 0))
-                                                            var otherEnd = otherStart + Math.max(1, Number(item.duration || 36))
-                                                            return start < otherEnd && start + duration > otherStart
-                                                        })
-                                                    }
-                                                    // Moving to another track is an intentional overlay (for example,
-                                                    // the same source clip on V1 and V2). Only prevent collisions
-                                                    // when the clip stays on its current track.
-                                                    if (targetTrack === Number(updated[movingIndex].track)
-                                                            && overlapsAt(desiredStart)) {
-                                                        var step = desiredStart >= dragStartTimeline ? 1 : -1
-                                                        var candidate = desiredStart
-                                                        var attempts = 0
-                                                        while (candidate >= 0 && overlapsAt(candidate) && attempts < 10000) {
-                                                            candidate += step
-                                                            attempts++
-                                                        }
-                                                        if (candidate < 0 || attempts >= 10000) {
-                                                            candidate = dragStartTimeline
-                                                            targetTrack = Number(updated[movingIndex].track)
-                                                            root.statusMessage = "Не удалось найти свободное место для клипа"
-                                                        } else {
-                                                            root.statusMessage = "Клип поставлен рядом с соседним"
-                                                        }
-                                                        desiredStart = candidate
+                                                    if (didSnap) {
+                                                        root.statusMessage = "Клип сдвинут на свободное место"
                                                     } else {
-                                                        root.statusMessage = targetTrack === Number(updated[movingIndex].track)
+                                                        root.statusMessage = targetTrack === Number(timelineClip.modelData.track)
                                                             ? "Клип перемещён"
                                                             : "Клип перемещён на дорожку " + ["V2", "V1", "A1", "A2"][targetTrack]
                                                     }
-                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], {
-                                                        start: desiredStart,
-                                                        track: targetTrack
-                                                    })
                                                     root.mediaFiles = updated
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
@@ -1395,21 +1511,13 @@ ApplicationWindow {
                                             // Each drop creates a separate timeline instance, even when
                                             // the same source file is used more than once.
                                             var source = updated[sourceIndex]
-                                            var start = Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale)))
-                                            var duration = Math.max(1, Number(source.duration || 36))
-                                            var end = start + duration
-                                            var collision = updated.some(function(item) {
-                                                if (Number(item.track) !== timelineTrack.index) return false
-                                                var otherStart = Math.max(0, Number(item.start || 0))
-                                                var otherEnd = otherStart + Math.max(1, Number(item.duration || 36))
-                                                return start < otherEnd && end > otherStart
-                                            })
-                                            if (collision) {
-                                                root.statusMessage = "На этой дорожке уже есть клип в этом месте"
-                                                return
-                                            }
+                                            var requestedStart = Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale)))
+                                            var duration = root.timelineClipDuration(source)
+                                            var start = root.findFreeTimelineStart(timelineTrack.index, requestedStart, duration, "")
+                                            var didSnap = Math.abs(start - requestedStart) > 0.001
 
                                             var clip = Object.assign({}, source, {
+                                                clipId: root.createTimelineClipId(),
                                                 track: timelineTrack.index,
                                                 start: start,
                                                 duration: duration
@@ -1418,7 +1526,9 @@ ApplicationWindow {
                                             root.mediaFiles = updated
                                             root.saveTimelineMedia(updated)
                                             root.timelinePosition = start
-                                            root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
+                                            root.statusMessage = didSnap
+                                                ? "Клип размещён после соседнего на " + timelineTrack.modelData
+                                                : "Клип добавлен на " + timelineTrack.modelData
                                             drop.acceptProposedAction()
                                         }
                                     }
