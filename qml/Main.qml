@@ -82,6 +82,13 @@ ApplicationWindow {
         return 36
     }
 
+    function timelineTrackForKind(kind, requestedTrack) {
+        var track = Math.max(0, Math.min(4, Number(requestedTrack)))
+        if (kind === "audio") return track === 3 ? 3 : 2
+        if (kind === "text") return 4
+        return track === 0 || track === 1 ? track : 1
+    }
+
     function timelineClipById(id) {
         if (String(id || "") === "") return null
         for (var i = 0; i < mediaFiles.length; ++i) {
@@ -1626,7 +1633,8 @@ ApplicationWindow {
                                                 root.mediaFiles = updated
                                                 root.saveTimelineMedia(updated)
                                                 root.statusMessage = "Длина клипа изменена"
-                                            }                                            x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
+                                            } 
+                                             x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
                                                + (draggingClip ? dragOffsetX : 0)
                                             width: Math.max(3, (resizingEdge !== "" ? resizePreviewDuration : root.timelineClipDuration(modelData))
                                                             * timelineCanvas.timelineScale)
@@ -1723,7 +1731,8 @@ ApplicationWindow {
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
                                                     var desiredStart = Math.max(0, Math.round(draggedX / Math.max(0.001, timelineCanvas.timelineScale)))
                                                     // The track rows start at y=25 and repeat every 37 pixels.
-                                                    var targetTrack = Math.max(0, Math.min(4, Math.floor((scenePos.y - 23.5) / 37)))
+                                                    var requestedTrack = Math.max(0, Math.min(4, Math.floor((scenePos.y - 23.5) / 37)))
+                                                     var targetTrack = root.timelineTrackForKind(updated[movingIndex].kind, requestedTrack)
                                                     var clipId = String(updated[movingIndex].clipId || "")
                                                     var placedStart = root.findFreeTimelineStart(targetTrack, desiredStart, duration, clipId)
                                                     var didSnap = Math.abs(placedStart - desiredStart) > 0.001
@@ -1808,13 +1817,14 @@ ApplicationWindow {
                                             // the same source file is used more than once.
                                             var source = updated[sourceIndex]
                                             var requestedStart = Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale)))
-                                            var duration = root.timelineClipDuration(source)
-                                            var start = root.findFreeTimelineStart(timelineTrack.index, requestedStart, duration, "")
+                                             var targetTrack = root.timelineTrackForKind(source.kind, timelineTrack.index)
+                                             var duration = root.timelineClipDuration(source)
+                                             var start = root.findFreeTimelineStart(targetTrack, requestedStart, duration, "")
                                             var didSnap = Math.abs(start - requestedStart) > 0.001
 
                                             var clip = Object.assign({}, source, {
                                                 clipId: root.createTimelineClipId(),
-                                                track: timelineTrack.index,
+                                                track: targetTrack,
                                                 start: start,
                                                 duration: duration
                                             })
@@ -1822,9 +1832,10 @@ ApplicationWindow {
                                             root.mediaFiles = updated
                                             root.saveTimelineMedia(updated)
                                             root.timelinePosition = start
-                                            root.statusMessage = didSnap
-                                                ? "Клип размещён после соседнего на " + timelineTrack.modelData
-                                                : "Клип добавлен на " + timelineTrack.modelData
+                                            var actualTrackName = ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"][targetTrack]
+                                             root.statusMessage = didSnap
+                                                 ? "Клип размещён рядом на " + actualTrackName
+                                                 : "Клип добавлен на " + actualTrackName
                                             drop.acceptProposedAction()
                                         }
                                     }
