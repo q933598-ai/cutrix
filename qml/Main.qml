@@ -1233,39 +1233,30 @@ ApplicationWindow {
     
                                                     var requestedX = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
                                                                                            dragStartClipX + dx))
-                                                    var requestedY = dragStartClipY + dy
-                                                    // По вертикали клип можно поднять над соседями и обнести их.
-                                                    // Внутри дорожки включается столкновение: дальше соседа не тянется.
-                                                    if (requestedY >= -timelineClip.height && requestedY <= timelineTrack.height) {
-                                                        timelineClip.y = requestedY
-                                                        timelineClip.x = requestedX
-                                                        return
-                                                    }
-    
                                                     var movingStart = dragStartTimeline
                                                     var movingDuration = Math.max(1, Number(timelineClip.modelData.duration || 36))
                                                     var desiredStart = requestedX / 3
                                                     var direction = desiredStart >= movingStart ? 1 : -1
-                                                    var allowedStart = movingStart
+                                                    var allowedStart = desiredStart
                                                     var obstacles = root.mediaFiles.filter(function(item) {
-                                                        return String(item.url) !== String(timelineClip.modelData.url)
-                                                            && Number(item.track) === Number(timelineClip.modelData.track)
-                                                    }).sort(function(a, b) {
-                                                        return direction > 0
-                                                            ? Number(a.start || 0) - Number(b.start || 0)
-                                                            : Number(b.start || 0) - Number(a.start || 0)
+                                                        return Number(item.track) === Number(timelineClip.modelData.track)
+                                                            && !(String(item.url) === String(timelineClip.modelData.url)
+                                                                && Number(item.start || 0) === Number(timelineClip.modelData.start || 0)
+                                                                && String(item.name) === String(timelineClip.modelData.name))
                                                     })
                                                     for (var i = 0; i < obstacles.length; ++i) {
                                                         var otherStart = Math.max(0, Number(obstacles[i].start || 0))
-                                                        var otherEnd = otherStart + Math.max(1, Number(obstacles[i].duration || 36))
+                                                        var otherDuration = Math.max(1, Number(obstacles[i].duration || 36))
+                                                        var otherEnd = otherStart + otherDuration
                                                         if (direction > 0 && movingStart + movingDuration <= otherStart
                                                                 && desiredStart + movingDuration > otherStart) {
-                                                            allowedStart = Math.max(allowedStart, otherStart - movingDuration)
-                                                            break
-                                                        }
-                                                        if (direction < 0 && movingStart >= otherEnd && desiredStart < otherEnd) {
-                                                            allowedStart = Math.min(movingStart, otherEnd)
-                                                            break
+                                                            allowedStart = Math.min(allowedStart, otherStart - movingDuration)
+                                                        } else if (direction < 0 && movingStart >= otherEnd
+                                                                && desiredStart < otherEnd) {
+                                                            allowedStart = Math.max(allowedStart, otherEnd)
+                                                        } else if (desiredStart < otherEnd && desiredStart + movingDuration > otherStart) {
+                                                            // If a clip already overlaps another one, don't push it farther into the overlap.
+                                                            allowedStart = movingStart
                                                         }
                                                     }
                                                     timelineClip.x = Math.max(0, allowedStart * 3)
