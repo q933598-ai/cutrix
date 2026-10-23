@@ -71,7 +71,16 @@ ApplicationWindow {
                 if (updated[j].url === url) { exists = true; break }
             }
             if (!exists) {
-                updated.push({ url: url, name: fileNameFromUrl(url) })
+                var metadata = mediaTools.inspect(url)
+                updated.push({
+                    url: url,
+                    name: fileNameFromUrl(url),
+                    kind: metadata.kind || "unknown",
+                    duration: metadata.duration || 0,
+                    missing: !metadata.exists,
+                    track: -1,
+                    start: 0
+                })
                 ++added
             }
         }
