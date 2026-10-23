@@ -2,6 +2,8 @@
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QCoreApplication>
+#include <QQmlContext>
+#include "ProjectStore.h"
 
 int main(int argc, char *argv[])
 {
@@ -11,10 +13,11 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationVersion("0.1.0");
     QGuiApplication::setOrganizationName("Cutrix");
 
-    // QML defines the custom visual theme; Basic keeps controls easy to style.
     QQuickStyle::setStyle("Basic");
 
+    ProjectStore projectStore;
     QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("projectStore", &projectStore);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
