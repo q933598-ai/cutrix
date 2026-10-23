@@ -706,21 +706,28 @@ ApplicationWindow {
                                 id: mediaCard
                                 required property var modelData
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 118
+                                Layout.minimumWidth: 0
+                                Layout.preferredHeight: 124
+                                clip: true
                                 color: theme.background
                                 border.color: root.selectedMedia === modelData.name ? theme.accent : theme.border
+
                                 Column {
                                     anchors.fill: parent
-                                    spacing: 2
+                                    anchors.margins: 4
+                                    spacing: 3
+
                                     Rectangle {
                                         width: parent.width
-                                        height: 76
+                                        height: 78
                                         color: theme.panelAlt
+                                        border.color: theme.border
                                         clip: true
+
                                         Image {
                                             id: mediaThumbnail
                                             anchors.fill: parent
-                                            source: mediaTools.thumbnail(mediaCard.modelData.url)
+                                            source: mediaCard.modelData.missing ? "" : mediaTools.thumbnail(mediaCard.modelData.url)
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true
                                             cache: true
@@ -728,62 +735,58 @@ ApplicationWindow {
                                         Text {
                                             anchors.centerIn: parent
                                             visible: mediaThumbnail.status !== Image.Ready
-                                            text: mediaCard.modelData.missing ? "ФАЙЛ НЕ НАЙДЕН" :
-                                                  mediaCard.modelData.kind === "audio" ? "♫\nАУДИО" :
-                                                  mediaCard.modelData.kind === "image" ? "ИЗОБРАЖЕНИЕ" : "НЕТ\nПРЕВЬЮ"
+                                            text: mediaCard.modelData.missing ? "НЕТ ФАЙЛА" :
+                                                  mediaCard.modelData.kind === "audio" ? "♫" :
+                                                  mediaCard.modelData.kind === "image" ? "▧" : "▶"
                                             horizontalAlignment: Text.AlignHCenter
-                                            color: theme.muted
-                                            font.pixelSize: 12
-                                            font.family: "monospace"
-                                        }
-                                        Text {
-                                            anchors.centerIn: parent
-                                            visible: !/\.(png|jpe?g|webp|bmp|gif|mp3|wav|flac|ogg|m4a|aac)$/i.test(mediaCard.modelData.name)
-                                            text: "▶"
                                             color: theme.accent
-                                            font.pixelSize: 28
+                                            font.pixelSize: 24
                                             font.family: "monospace"
                                         }
                                         Text {
                                             anchors.left: parent.left
                                             anchors.bottom: parent.bottom
-                                            anchors.margins: 4
-                                            text: mediaCard.modelData.kind ? mediaCard.modelData.kind.toUpperCase() : "MEDIA"
+                                            anchors.margins: 3
+                                            text: (mediaCard.modelData.kind || "media").toUpperCase()
                                             color: theme.text
                                             font.family: "monospace"
-                                            font.pixelSize: 9
+                                            font.pixelSize: 8
                                         }
                                     }
                                     Text {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 4
-                                        width: parent.width - 8
+                                        width: parent.width
                                         text: mediaCard.modelData.name
                                         color: theme.text
                                         font.family: "monospace"
-                                        font.pixelSize: 10
+                                        font.pixelSize: 9
                                         elide: Text.ElideRight
                                     }
                                     Text {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 4
-                                        text: mediaCard.modelData.missing ? "ФАЙЛ НЕ НАЙДЕН" : "ПЕРЕТАЩИ НА ДОРОЖКУ"
+                                        width: parent.width
+                                        text: mediaCard.modelData.missing ? "ФАЙЛ НЕ НАЙДЕН" : "ТАЩИ НА ДОРОЖКУ"
                                         color: mediaCard.modelData.missing ? "#ff6b6b" : theme.muted
                                         font.family: "monospace"
                                         font.pixelSize: 8
+                                        elide: Text.ElideRight
                                     }
                                 }
-                                Drag.active: dragMouse.drag.active
+
+                                Drag.active: cardDrag.active
                                 Drag.dragType: Drag.Automatic
-                                Drag.mimeData: ({ "text/plain": mediaCard.modelData.url })
+                                Drag.mimeData: ({ "text/plain": String(mediaCard.modelData.url) })
                                 Drag.supportedActions: Qt.CopyAction
-                                MouseArea {
-                                    id: dragMouse
-                                    anchors.fill: parent
-                                    drag.target: mediaCard
-                                    onPressed: root.selectedMedia = mediaCard.modelData.name
-                                    onReleased: mediaCard.Drag.drop()
-                                    onClicked: root.selectedMedia = mediaCard.modelData.name
+                                Drag.hotSpot.x: cardDrag.centroid.position.x
+                                Drag.hotSpot.y: cardDrag.centroid.position.y
+
+                                DragHandler {
+                                    id: cardDrag
+                                    target: null
+                                    onActiveChanged: {
+                                        if (!active) mediaCard.Drag.drop()
+                                    }
+                                }
+                                TapHandler {
+                                    onTapped: root.selectedMedia = mediaCard.modelData.name
                                 }
                             }
                         }
