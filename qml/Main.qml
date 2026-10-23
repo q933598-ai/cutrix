@@ -19,7 +19,7 @@ ApplicationWindow {
     property var mediaFiles: []
     property bool isPlaying: false
     property string playbackError: ""
-    property var selectedMediaUrl: {
+    property url selectedMediaUrl: {
         for (var i = 0; i < mediaFiles.length; ++i)
             if (mediaFiles[i].name === selectedMedia) return mediaFiles[i].url
         return ""
@@ -46,7 +46,7 @@ ApplicationWindow {
         var updated = root.mediaFiles.slice()
         var added = 0
         for (var i = 0; i < urls.length; ++i) {
-            var url = String(urls[i])
+            var url = urls[i].toString()
             var exists = false
             for (var j = 0; j < updated.length; ++j) {
                 if (updated[j].url === url) { exists = true; break }
@@ -190,6 +190,13 @@ ApplicationWindow {
         onSourceChanged: {
             root.playbackError = ""
             root.isPlaying = false
+            if (source.toString() !== "") root.statusMessage = "Загружаю видео: " + root.selectedMedia
+        }
+        onMediaStatusChanged: {
+            if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia)
+                root.statusMessage = "Видео загружено: " + root.selectedMedia
+            else if (mediaStatus === MediaPlayer.InvalidMedia)
+                root.statusMessage = "Не удалось открыть видео. Проверь формат и кодеки."
         }
     }
 
@@ -489,7 +496,7 @@ ApplicationWindow {
                             id: videoOutput
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
-                            visible: mediaPlayer.hasVideo
+                            visible: true
                         }
 
                         Canvas {
@@ -540,7 +547,9 @@ ApplicationWindow {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: root.selectedMedia === "" ? "Импортируй видео для предпросмотра" :
                                       mediaPlayer.errorString !== "" ? mediaPlayer.errorString :
-                                      "Ожидание видеопотока…"
+                                      mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia ? "Загружаю видео…" :
+                                      mediaPlayer.mediaStatus === MediaPlayer.InvalidMedia ? "Не удалось прочитать файл" :
+                                      mediaPlayer.hasVideo ? "" : "В файле не найден видеопоток"
                                 color: "#d7e2ff"
                                 font.family: "monospace"
                                 font.pixelSize: 12 * root.uiFontScale / 100
