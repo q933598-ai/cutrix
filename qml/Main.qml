@@ -1317,13 +1317,28 @@ ApplicationWindow {
                                         onExited: timelineTrack.dropHover = false
                                         onDropped: function(drop) {
                                             timelineTrack.dropHover = false
-                                            var url = drop.getDataAsString("text/plain")
+                                            // Prefer the actual drag source; MIME text can be empty on some Qt Quick setups.
+                                            var url = ""
+                                            if (drop.source && drop.source.modelData && drop.source.modelData.url)
+                                                url = String(drop.source.modelData.url)
+                                            if (url === "")
+                                                url = String(drop.getDataAsString("text/plain") || "")
                                             var updated = root.mediaFiles.slice()
                                             var sourceIndex = -1
                                             for (var i = 0; i < updated.length; ++i) {
-                                                if (String(updated[i].url) === String(url) && Number(updated[i].track) < 0) {
+                                                if (String(updated[i].url) === url && Number(updated[i].track) < 0) {
                                                     sourceIndex = i
                                                     break
+                                                }
+                                            }
+                                            // If the original media-bin entry isn't found by track state,
+                                            // any matching source can still provide the clip metadata.
+                                            if (sourceIndex < 0) {
+                                                for (var j = 0; j < updated.length; ++j) {
+                                                    if (String(updated[j].url) === url) {
+                                                        sourceIndex = j
+                                                        break
+                                                    }
                                                 }
                                             }
                                             if (sourceIndex < 0) {
