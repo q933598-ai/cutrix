@@ -585,31 +585,21 @@ ApplicationWindow {
                         root.pendingProjectName = projectNameField.text.trim()
                         root.pendingResolution = resolutionBox.currentText
                         root.pendingFps = parseInt(fpsBox.currentText)
-                        // Set the initial folder separately; pre-setting currentFile can crash Qt Quick Dialogs on some Qt 6 builds.
-                        projectSaveDialog.currentFolder = Qt.resolvedUrl(StandardPaths.writableLocation(StandardPaths.DocumentsLocation) + "/")
-                        projectSaveDialog.open()
+                        var path = projectStore.chooseProjectSavePath(root.pendingProjectName)
+                        if (path === "") return
+                        if (!path.toLowerCase().endsWith(".cutrix")) path += ".cutrix"
+                        if (projectStore.createProject(path, root.pendingProjectName, root.pendingResolution, root.pendingFps)) {
+                            root.openProject(path, root.pendingProjectName)
+                            newProjectDialog.close()
+                        } else {
+                            root.statusMessage = projectStore.lastError()
+                        }
                     }
                     palette.buttonText: theme.background
                     background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 0 }
                 }
             }
             }
-        }
-    }
-
-    FileDialog {
-        id: projectSaveDialog
-        title: "Сохранить проект Cutrix"
-        fileMode: FileDialog.SaveFile
-        nameFilters: ["Проект Cutrix (*.cutrix)"]
-        onAccepted: {
-            var path = selectedFile.toString()
-            if (path.startsWith("file://")) path = decodeURIComponent(path.substring(7))
-            if (!path.endsWith(".cutrix")) path += ".cutrix"
-            if (projectStore.createProject(path, root.pendingProjectName, root.pendingResolution, root.pendingFps)) {
-                root.openProject(path, root.pendingProjectName)
-                newProjectDialog.close()
-            } else root.statusMessage = projectStore.lastError()
         }
     }
 
