@@ -29,6 +29,8 @@ ApplicationWindow {
     property int uiFontScale: projectStore.savedFontScale()
     property string currentProjectPath: ""
     property string currentProjectName: ""
+    property string currentProjectResolution: "1920×1080"
+    property int currentProjectFps: 30
     property string projectSearch: ""
     property string projectSort: "Последние"
     property var recentProjects: projectStore.recentProjects()
@@ -399,6 +401,13 @@ ApplicationWindow {
             projectStore.saveProjectMedia(path, mediaFiles)
         selectedMedia = mediaFiles.length > 0 ? mediaFiles[0].name : ""
         refreshProjects()
+        var projectInfo = recentProjects.filter(function(item) {
+            return String(item.path) === String(path)
+        })[0]
+        if (projectInfo) {
+            currentProjectResolution = String(projectInfo.resolution || "1920×1080")
+            currentProjectFps = Number(projectInfo.fps) || 30
+        }
         statusMessage = "Открыт проект: " + currentProjectName
     }
     onCurrentThemeChanged: projectStore.saveAppearance(currentTheme, uiFontScale)
@@ -1093,7 +1102,13 @@ ApplicationWindow {
         fileMode: FileDialog.SaveFile
         defaultSuffix: "mp4"
         nameFilters: ["Видео MP4 (*.mp4)", "Все файлы (*)"]
-        onAccepted: exportController.startExport(root.mediaFiles, selectedFile.toString())
+        onAccepted: {
+            var dimensions = root.currentProjectResolution.replace("×", "x").split("x")
+            var outputWidth = parseInt(dimensions[0]) || 1920
+            var outputHeight = parseInt(dimensions[1]) || 1080
+            exportController.startExport(root.mediaFiles, selectedFile.toString(),
+                                         outputWidth, outputHeight, root.currentProjectFps)
+        }
     }
 
     Connections {
@@ -1609,7 +1624,7 @@ ApplicationWindow {
                     Item { Layout.fillHeight: true }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text { text: "ЭКСПОРТ"; color: theme.accent; font.family: "monospace"; font.bold: true }
-                    Text { text: "MP4 · H.264 · 1920×1080"; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
+                    Text { text: "MP4 · H.264 · " + root.currentProjectResolution + " · " + root.currentProjectFps + " FPS"; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
                     Button {
                         text: exportController.running
                             ? "Экспорт · " + Math.round(exportController.progress * 100) + "%"
