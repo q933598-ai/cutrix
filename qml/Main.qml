@@ -302,13 +302,34 @@ ApplicationWindow {
         parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true
-        width: 470
-        title: "НОВЫЙ ПРОЕКТ"
+        width: 430
+        title: ""
+        padding: 0
         standardButtons: Dialog.NoButton
         background: Rectangle { color: theme.background; border.color: theme.accent; border.width: 2; radius: 0 }
         contentItem: ColumnLayout {
-            spacing: 12
-            Text { text: "◆ СОЗДАНИЕ ПРОЕКТА"; color: theme.accent; font.family: "monospace"; font.bold: true; font.pixelSize: 16 }
+            spacing: 0
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                color: theme.panelAlt
+                border.color: theme.border
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "◆ НОВЫЙ ПРОЕКТ"
+                    color: theme.accent
+                    font.family: "monospace"
+                    font.bold: true
+                    font.pixelSize: 14
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 14
+                spacing: 8
+                Text { text: "СОЗДАНИЕ ПРОЕКТА"; color: theme.muted; font.family: "monospace"; font.bold: true; font.pixelSize: 11 }
             TextField { id: projectNameField; Layout.fillWidth: true; placeholderText: "Название проекта"; text: "Мой проект"; color: theme.text; placeholderTextColor: theme.muted; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
             Text { text: "РАЗРЕШЕНИЕ"; color: theme.muted; font.family: "monospace" }
             ComboBox { id: resolutionBox; Layout.fillWidth: true; model: ["1920×1080", "2560×1440", "3840×2160", "1280×720"]; currentIndex: 0; palette.text: theme.text; background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 } }
@@ -331,6 +352,7 @@ ApplicationWindow {
                     palette.buttonText: theme.background
                     background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 0 }
                 }
+            }
             }
         }
     }
@@ -788,7 +810,7 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 238
+            Layout.preferredHeight: 164
             color: theme.panel
             border.color: theme.border
             ColumnLayout {
@@ -814,7 +836,7 @@ ApplicationWindow {
                             delegate: Rectangle {
                                 required property string modelData
                                 width: parent.width
-                                height: 31
+                                height: 22
                                 color: theme.panelAlt
                                 border.color: theme.border
                                 Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
@@ -859,14 +881,14 @@ ApplicationWindow {
                                 delegate: Item {
                                     required property var modelData
                                     width: parent.width
-                                    height: 31
+                                    height: 22
                                     Repeater {
                                         model: parent.modelData
                                         delegate: Rectangle {
                                             required property var modelData
                                             x: modelData.x * parent.width
                                             width: modelData.w * parent.width
-                                            height: 27
+                                            height: 19
                                             color: modelData.c
                                             border.color: Qt.lighter(modelData.c, 1.25)
                                             radius: 2
