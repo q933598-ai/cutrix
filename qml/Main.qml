@@ -541,6 +541,7 @@ ApplicationWindow {
             Action { text: "Закрыть проект"; onTriggered: { root.currentProjectPath = ""; root.refreshProjects() } }
             Action { text: "Сохранить проект"; onTriggered: { if (root.currentProjectPath !== "" && projectStore.saveProjectMedia(root.currentProjectPath, root.mediaFiles)) root.statusMessage = "Проект сохранён"; else root.statusMessage = projectStore.lastError() } }
             Action { text: "Добавить текстовый клип…"; enabled: root.currentProjectPath !== ""; onTriggered: textClipDialog.open() }
+            Action { text: "Экспортировать MP4…"; enabled: root.currentProjectPath !== "" && root.timelineDuration > 0 && !exportController.running; onTriggered: exportDialog.open() }
             MenuSeparator {}
             Action { text: "Выход"; onTriggered: Qt.quit() }
         }
@@ -1086,6 +1087,33 @@ ApplicationWindow {
         onAccepted: root.importSelectedFiles(selectedFiles)
     }
 
+    FileDialog {
+        id: exportDialog
+        title: "Экспортировать видео"
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "mp4"
+        nameFilters: ["Видео MP4 (*.mp4)", "Все файлы (*)"]
+        onAccepted: exportController.startExport(root.mediaFiles, selectedFile.toString())
+    }
+
+    Connections {
+        target: exportController
+        function onStatusChanged(message) {
+            root.statusMessage = message
+        }
+        function onProgressChanged() {
+            root.statusMessage = "Экспорт: " + Math.round(exportController.progress * 100) + "%"
+        }
+        function onExportFinished(outputPath, usedHardwareEncoder) {
+            root.statusMessage = usedHardwareEncoder
+                ? "Экспорт готов · NVIDIA NVENC"
+                : "Экспорт готов · CPU (libx264)"
+        }
+        function onExportFailed(message) {
+            root.statusMessage = "Ошибка экспорта: " + message
+        }
+    }
+
     Dialog {
         id: aboutDialog
         title: "О Cutrix"
@@ -1583,9 +1611,12 @@ ApplicationWindow {
                     Text { text: "ЭКСПОРТ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     Text { text: "MP4 · H.264 · 1920×1080"; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
                     Button {
-                        text: "↗ Экспорт (скоро)"
+                        text: exportController.running
+                            ? "Экспорт · " + Math.round(exportController.progress * 100) + "%"
+                            : "↗ Экспортировать MP4"
                         Layout.fillWidth: true
-                        onClicked: root.statusMessage = "Экспорт добавим после подключения FFmpeg"
+                        enabled: root.timelineDuration > 0 && !exportController.running
+                        onClicked: exportDialog.open()
                         palette.buttonText: "#101522"
                         background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 2 }
                     }
