@@ -1209,6 +1209,8 @@ ApplicationWindow {
                                             property real dragStartX: 0
                                             property real dragStartY: 0
                                             property real dragStartTimeline: 0
+                                            property real dragStartClipX: 0
+                                            property real dragStartClipY: 2
                                             property bool draggingClip: false
                                             MouseArea {
                                                 anchors.fill: parent
@@ -1217,6 +1219,8 @@ ApplicationWindow {
                                                     dragStartX = mouse.x
                                                     dragStartY = mouse.y
                                                     dragStartTimeline = Number(timelineClip.modelData.start || 0)
+                                                    dragStartClipX = timelineClip.x
+                                                    dragStartClipY = timelineClip.y
                                                     draggingClip = false
                                                 }
                                                 onPositionChanged: function(mouse) {
@@ -1228,8 +1232,8 @@ ApplicationWindow {
                                                     if (!draggingClip) return
     
                                                     var requestedX = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
-                                                                                           timelineClip.x + dx))
-                                                    var requestedY = timelineClip.y + dy
+                                                                                           dragStartClipX + dx))
+                                                    var requestedY = dragStartClipY + dy
                                                     // По вертикали клип можно поднять над соседями и обнести их.
                                                     // Внутри дорожки включается столкновение: дальше соседа не тянется.
                                                     if (requestedY >= -timelineClip.height && requestedY <= timelineTrack.height) {
