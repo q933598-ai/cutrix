@@ -862,31 +862,6 @@ ApplicationWindow {
                             }
                         }
 
-                        Column {
-                            anchors.centerIn: parent
-                            spacing: 8
-                            visible: !mediaPlayer.hasVideo
-                            Text {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: root.selectedMedia === "" ? "CUTRIX" : root.selectedMedia
-                                color: "#ffffff"
-                                font.family: "monospace"
-                                font.pixelSize: 18 * root.uiFontScale / 100
-                                font.bold: true
-                                elide: Text.ElideMiddle
-                            }
-                            Text {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: root.selectedMedia === "" ? "Импортируй видео для предпросмотра" :
-                                      mediaPlayer.errorString !== "" ? mediaPlayer.errorString :
-                                      mediaPlayer.mediaStatus === MediaPlayer.LoadingMedia ? "Загружаю видео…" :
-                                      mediaPlayer.mediaStatus === MediaPlayer.InvalidMedia ? "Не удалось прочитать файл" :
-                                      mediaPlayer.hasVideo ? "" : "В файле не найден видеопоток"
-                                color: "#d7e2ff"
-                                font.family: "monospace"
-                                font.pixelSize: 12 * root.uiFontScale / 100
-                            }
-                        }
                     }
                     RowLayout {
                         Layout.fillWidth: true
