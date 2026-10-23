@@ -76,7 +76,7 @@ ApplicationWindow {
         timelinePreviewUrl = ""
         timelineSeekPending = -1
         mediaPlayer.stop()
-        mediaPlayer.source = selectedMediaUrl
+        // Источник задаётся binding-ом MediaPlayer.source выше; не разрываем его прямым присваиванием.
         mediaPlayer.play()
         statusMessage = "Предпросмотр файла: " + selectedMedia
     }
