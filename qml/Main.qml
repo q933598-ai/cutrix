@@ -1089,8 +1089,8 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 164
-            Layout.minimumHeight: 164
+            Layout.preferredHeight: 230
+            Layout.minimumHeight: 230
             color: theme.panel
             border.color: theme.border
             ColumnLayout {
@@ -1108,7 +1108,7 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     spacing: 0
                     Column {
-                        Layout.preferredWidth: 112
+                        Layout.preferredWidth: 150
                         Layout.fillHeight: true
                         spacing: 3
                         Repeater {
@@ -1159,7 +1159,7 @@ ApplicationWindow {
                                     required property int index
                                     property bool dropHover: false
                                     width: parent.width
-                                    height: 25
+                                    height: 34
                                     Rectangle {
                                         anchors.fill: parent
                                         color: timelineTrack.dropHover ? theme.accent2 : (index % 2 === 0 ? theme.panel : theme.background)
@@ -1173,7 +1173,7 @@ ApplicationWindow {
                                             required property var modelData
                                             x: Math.max(0, Number(modelData.start || 0) * 3)
                                             width: Math.max(3, Number(modelData.duration || 36) * 3)
-                                            height: 21
+                                            height: 30
                                             y: 2
                                             clip: true
                                             color: /\\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(modelData.name) ? "#226d6c" : "#315b9b"
@@ -1212,8 +1212,10 @@ ApplicationWindow {
                                             property real dragStartClipX: 0
                                             property real dragStartClipY: 2
                                             property bool draggingClip: false
+                                            z: draggingClip ? 10 : 1
                                             MouseArea {
                                                 anchors.fill: parent
+                                                preventStealing: true
                                                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
                                                     dragStartX = mouse.x
@@ -1230,44 +1232,21 @@ ApplicationWindow {
                                                     if (!draggingClip && Math.abs(dx) + Math.abs(dy) > 3)
                                                         draggingClip = true
                                                     if (!draggingClip) return
-    
-                                                    var requestedX = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
-                                                                                           dragStartClipX + dx))
-                                                    var movingStart = dragStartTimeline
-                                                    var movingDuration = Math.max(1, Number(timelineClip.modelData.duration || 36))
-                                                    var desiredStart = requestedX / 3
-                                                    var direction = desiredStart >= movingStart ? 1 : -1
-                                                    var allowedStart = desiredStart
-                                                    var obstacles = root.mediaFiles.filter(function(item) {
-                                                        return Number(item.track) === Number(timelineClip.modelData.track)
-                                                            && !(String(item.url) === String(timelineClip.modelData.url)
-                                                                && Number(item.start || 0) === Number(timelineClip.modelData.start || 0)
-                                                                && String(item.name) === String(timelineClip.modelData.name))
-                                                    })
-                                                    for (var i = 0; i < obstacles.length; ++i) {
-                                                        var otherStart = Math.max(0, Number(obstacles[i].start || 0))
-                                                        var otherDuration = Math.max(1, Number(obstacles[i].duration || 36))
-                                                        var otherEnd = otherStart + otherDuration
-                                                        if (direction > 0 && movingStart + movingDuration <= otherStart
-                                                                && desiredStart + movingDuration > otherStart) {
-                                                            allowedStart = Math.min(allowedStart, otherStart - movingDuration)
-                                                        } else if (direction < 0 && movingStart >= otherEnd
-                                                                && desiredStart < otherEnd) {
-                                                            allowedStart = Math.max(allowedStart, otherEnd)
-                                                        } else if (desiredStart < otherEnd && desiredStart + movingDuration > otherStart) {
-                                                            // If a clip already overlaps another one, don't push it farther into the overlap.
-                                                            allowedStart = movingStart
-                                                        }
-                                                    }
-                                                    timelineClip.x = Math.max(0, allowedStart * 3)
-                                                    timelineClip.y = 2
+
+                                                    // Move freely while dragging; lifting above the track lets the user
+                                                    // pass over another clip without the clip jumping back and forth.
+                                                    timelineClip.x = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
+                                                                                          dragStartClipX + dx))
+                                                    timelineClip.y = Math.max(-timelineClip.height - 2,
+                                                                              Math.min(timelineTrack.height + 2,
+                                                                                       dragStartClipY + dy))
                                                 }
                                                 onReleased: {
                                                     var wasDragging = draggingClip
                                                     draggingClip = false
                                                     timelineClip.y = 2
                                                     if (!wasDragging) return
-    
+
                                                     var updated = root.mediaFiles.slice()
                                                     var movingIndex = -1
                                                     for (var i = 0; i < updated.length; ++i) {
@@ -1280,20 +1259,49 @@ ApplicationWindow {
                                                         }
                                                     }
                                                     if (movingIndex < 0) {
-                                                        timelineClip.x = dragStartTimeline * 3
+                                                        timelineClip.x = dragStartClipX
                                                         return
                                                     }
-                                                    var newStart = Math.max(0, Math.round(timelineClip.x / 3))
-                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: newStart })
+
+                                                    var duration = Math.max(1, Number(updated[movingIndex].duration || 36))
+                                                    var desiredStart = Math.max(0, Math.round(timelineClip.x / 3))
+                                                    var trackIndex = Number(updated[movingIndex].track)
+                                                    var obstacles = updated.filter(function(item, index) {
+                                                        return index !== movingIndex && Number(item.track) === trackIndex
+                                                    })
+                                                    var overlapsAt = function(start) {
+                                                        return obstacles.some(function(item) {
+                                                            var otherStart = Math.max(0, Number(item.start || 0))
+                                                            var otherEnd = otherStart + Math.max(1, Number(item.duration || 36))
+                                                            return start < otherEnd && start + duration > otherStart
+                                                        })
+                                                    }
+                                                    // If dropped on a clip, find the nearest free position in the
+                                                    // direction of travel instead of allowing two clips to overlap.
+                                                    if (overlapsAt(desiredStart)) {
+                                                        var step = desiredStart >= dragStartTimeline ? 1 : -1
+                                                        var candidate = desiredStart
+                                                        var attempts = 0
+                                                        while (candidate >= 0 && overlapsAt(candidate) && attempts < 10000) {
+                                                            candidate += step
+                                                            attempts++
+                                                        }
+                                                        if (candidate < 0 || attempts >= 10000) {
+                                                            candidate = dragStartTimeline
+                                                            root.statusMessage = "Не удалось найти свободное место для клипа"
+                                                        } else {
+                                                            root.statusMessage = "Клип поставлен рядом с соседним"
+                                                        }
+                                                        desiredStart = candidate
+                                                    } else {
+                                                        root.statusMessage = "Клип перемещён"
+                                                    }
+                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], { start: desiredStart })
                                                     root.mediaFiles = updated
                                                     root.saveTimelineMedia(updated)
-                                                    timelineClip.x = newStart * 3
-                                                    root.statusMessage = "Клип перемещён"
+                                                    timelineClip.x = desiredStart * 3
                                                 }
                                             }
-                                        }
-                                    }
-                                    DropArea {
                                         anchors.fill: parent
                                         onEntered: function(drag) {
                                             timelineTrack.dropHover = true
