@@ -34,6 +34,49 @@ ApplicationWindow {
     property var recentProjects: projectStore.recentProjects()
     property string statusMessage: "Готово · Cutrix Project Hub"
     property int mediaPanelWidth: 255
+    property real timelinePosition: 0
+    property real timelineDuration: {
+        var end = 0
+        for (var i = 0; i < mediaFiles.length; ++i) {
+            if (Number(mediaFiles[i].track) >= 0)
+                end = Math.max(end, Number(mediaFiles[i].start || 0) + Number(mediaFiles[i].duration || 0))
+        }
+        return end
+    }
+    property string timelinePreviewUrl: ""
+    property real timelineSeekPending: -1
+
+    function timelineVideoAt(seconds) {
+        var candidates = mediaFiles.filter(function(item) {
+            return (Number(item.track) === 0 || Number(item.track) === 1)
+                && item.kind !== "audio"
+                && Number(item.start || 0) <= seconds
+                && Number(item.start || 0) + Number(item.duration || 0) > seconds
+        })
+        if (candidates.length === 0) return null
+        candidates.sort(function(a, b) { return Number(b.track) - Number(a.track) })
+        return candidates[0]
+    }
+    function updateTimelinePreview(seconds) {
+        var clip = timelineVideoAt(seconds)
+        if (!clip) {
+            mediaPlayer.pause()
+            timelinePreviewUrl = ""
+            mediaPlayer.source = ""
+            return
+        }
+        var url = String(clip.url)
+        var offset = Math.max(0, seconds - Number(clip.start || 0))
+        if (url !== String(timelinePreviewUrl)) {
+            mediaPlayer.pause()
+            timelinePreviewUrl = url
+            timelineSeekPending = offset
+            mediaPlayer.source = clip.url
+        } else {
+            var target = offset * 1000
+            if (Math.abs(mediaPlayer.position - target) > 120) mediaPlayer.position = target
+        }
+    }
 
     readonly property var palettes: ({
         "Tokyo Night": { background: "#101522", panel: "#171f32", panelAlt: "#1d2942", border: "#30466f", text: "#d7e2ff", muted: "#8299c9", accent: "#7aa2f7", accent2: "#bb9af7", green: "#9ece6a" },
@@ -284,9 +327,33 @@ ApplicationWindow {
         }
     }
 
+    Timer {
+        id: timelinePlaybackTimer
+        interval: 33
+        repeat: true
+        onTriggered: {
+            root.timelinePosition = Math.min(root.timelineDuration, root.timelinePosition + interval / 1000)
+            if (root.timelinePosition >= root.timelineDuration) {
+                stop()
+                mediaPlayer.pause()
+                return
+            }
+            var clip = root.timelineVideoAt(root.timelinePosition)
+            if (!clip) {
+                mediaPlayer.pause()
+                root.timelinePreviewUrl = ""
+                mediaPlayer.source = ""
+            } else if (String(clip.url) !== String(root.timelinePreviewUrl)) {
+                root.updateTimelinePreview(root.timelinePosition)
+            } else if (mediaPlayer.playbackState !== MediaPlayer.PlayingState) {
+                mediaPlayer.play()
+            }
+        }
+    }
+
     MediaPlayer {
         id: mediaPlayer
-        source: root.selectedMediaUrl
+        source: root.timelinePreviewUrl !== "" ? root.timelinePreviewUrl : root.selectedMediaUrl
         videoOutput: videoOutput
         audioOutput: AudioOutput {}
         onPlaybackStateChanged: root.isPlaying = playbackState === MediaPlayer.PlayingState
@@ -300,10 +367,17 @@ ApplicationWindow {
             if (source.toString() !== "") root.statusMessage = "Загружаю видео: " + root.selectedMedia
         }
         onMediaStatusChanged: {
-            if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia)
-                root.statusMessage = "Видео загружено: " + root.selectedMedia
-            else if (mediaStatus === MediaPlayer.InvalidMedia)
+            if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
+                if (root.timelineSeekPending >= 0) {
+                    mediaPlayer.position = root.timelineSeekPending * 1000
+                    root.timelineSeekPending = -1
+                    if (timelinePlaybackTimer.running) mediaPlayer.play()
+                } else if (root.timelinePreviewUrl === "") {
+                    root.statusMessage = "Видео загружено: " + root.selectedMedia
+                }
+            } else if (mediaStatus === MediaPlayer.InvalidMedia) {
                 root.statusMessage = "Не удалось открыть видео. Проверь формат и кодеки."
+            }
         }
     }
 
@@ -687,6 +761,8 @@ ApplicationWindow {
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.maximumWidth: mediaPanel.width - 18
                         placeholderText: "Поиск медиа…"
                         color: theme.text
                         placeholderTextColor: theme.muted
@@ -709,10 +785,11 @@ ApplicationWindow {
                         Layout.fillHeight: true
                         contentWidth: width
                         contentHeight: mediaGrid.implicitHeight
+                        boundsBehavior: Flickable.StopAtBounds
                         clip: true
                         GridLayout {
                             id: mediaGrid
-                            width: parent.width
+                            width: Math.max(0, parent.width)
                             columns: 3
                             columnSpacing: 5
                             rowSpacing: 5
@@ -721,8 +798,9 @@ ApplicationWindow {
                                 delegate: Rectangle {
                                     id: mediaCard
                                     required property var modelData
-                                    Layout.preferredWidth: (mediaGrid.width - 10) / 3
-                                    Layout.maximumWidth: (mediaGrid.width - 10) / 3
+                                    Layout.preferredWidth: Math.max(0, (mediaGrid.width - 10) / 3)
+                                    Layout.maximumWidth: Math.max(0, (mediaGrid.width - 10) / 3)
+                                    Layout.minimumWidth: 0
                                     Layout.preferredHeight: 68
                                 clip: true
                                 opacity: cardDrag.active ? 0.72 : 1.0
@@ -885,11 +963,21 @@ ApplicationWindow {
                         Text { text: mediaPlayer.position >= 0 ? Qt.formatTime(mediaPlayer.position / 1000, "mm:ss") + " / " + Qt.formatTime(mediaPlayer.duration / 1000, "mm:ss") : "00:00 / 00:00"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                         Item { Layout.fillWidth: true }
                         Button {
-                            text: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Ⅱ Пауза" : "▶ Воспроизвести"
-                            enabled: root.selectedMediaUrl !== ""
+                            text: timelinePlaybackTimer.running ? "Ⅱ Пауза монтажа" : "▶ Предпросмотр монтажа"
+                            enabled: root.timelineDuration > 0 || root.selectedMediaUrl !== ""
                             onClicked: {
-                                if (mediaPlayer.playbackState === MediaPlayer.PlayingState) mediaPlayer.pause()
-                                else mediaPlayer.play()
+                                if (timelinePlaybackTimer.running) {
+                                    timelinePlaybackTimer.stop()
+                                    mediaPlayer.pause()
+                                } else if (root.timelineDuration > 0) {
+                                    if (root.timelinePosition >= root.timelineDuration) root.timelinePosition = 0
+                                    root.updateTimelinePreview(root.timelinePosition)
+                                    timelinePlaybackTimer.start()
+                                } else {
+                                    root.timelinePreviewUrl = ""
+                                    mediaPlayer.source = root.selectedMediaUrl
+                                    mediaPlayer.play()
+                                }
                             }
                             palette.buttonText: theme.text
                             background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
@@ -1112,8 +1200,22 @@ ApplicationWindow {
                                                 }
                                             }
                                             if (found) {
+                                                var moved = updated.find(function(item) { return String(item.url) === String(url) })
+                                                var movedStart = Number(moved.start || 0)
+                                                var movedEnd = movedStart + Number(moved.duration || 36)
+                                                var collision = updated.some(function(item) {
+                                                    if (String(item.url) === String(url) || Number(item.track) !== timelineTrack.index) return false
+                                                    var otherStart = Number(item.start || 0)
+                                                    var otherEnd = otherStart + Number(item.duration || 36)
+                                                    return movedStart < otherEnd && movedEnd > otherStart
+                                                })
+                                                if (collision) {
+                                                    root.statusMessage = "На этой дорожке уже есть клип в этом месте"
+                                                    return
+                                                }
                                                 root.mediaFiles = updated
                                                 if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
+                                                root.timelinePosition = movedStart
                                                 root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
                                                 drop.acceptProposedAction()
                                             } else {
@@ -1126,7 +1228,7 @@ ApplicationWindow {
                         }
                         Rectangle {
                             id: timelinePlayhead
-                            x: mediaPlayer.duration > 0 ? Math.min(timelineCanvas.width - width, (mediaPlayer.position / mediaPlayer.duration) * timelineCanvas.width) : 0
+                            x: root.timelineDuration > 0 ? Math.min(timelineCanvas.width - width, (root.timelinePosition / root.timelineDuration) * timelineCanvas.width) : 0
                             y: 20
                             width: 2
                             height: Math.max(0, timelineCanvas.height - 20)
@@ -1147,13 +1249,16 @@ ApplicationWindow {
                                 cursorShape: Qt.SizeHorCursor
                                 onPressed: function(mouse) {
                                     var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
-                                    if (mediaPlayer.duration > 0 && timelineCanvas.width > 0)
-                                        mediaPlayer.position = Math.round((Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * mediaPlayer.duration)
+                                    if (root.timelineDuration > 0 && timelineCanvas.width > 0) {
+                                        root.timelinePosition = (Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * root.timelineDuration
+                                        root.updateTimelinePreview(root.timelinePosition)
+                                    }
                                 }
                                 onPositionChanged: function(mouse) {
-                                    if (pressed && mediaPlayer.duration > 0 && timelineCanvas.width > 0) {
+                                    if (pressed && root.timelineDuration > 0 && timelineCanvas.width > 0) {
                                         var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
-                                        mediaPlayer.position = Math.round((Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * mediaPlayer.duration)
+                                        root.timelinePosition = (Math.max(0, Math.min(timelineCanvas.width, sceneX)) / timelineCanvas.width) * root.timelineDuration
+                                        root.updateTimelinePreview(root.timelinePosition)
                                     }
                                 }
                             }
