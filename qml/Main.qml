@@ -1233,7 +1233,11 @@ ApplicationWindow {
                                         Image {
                                             id: mediaThumbnail
                                             anchors.fill: parent
-                                            source: mediaCard.modelData.missing ? "" : mediaTools.thumbnail(mediaCard.modelData.url)
+                                            source: {
+                                                // Refresh when a background thumbnail finishes.
+                                                var revision = mediaTools.thumbnailRevision
+                                                return mediaCard.modelData.missing ? "" : mediaTools.thumbnail(mediaCard.modelData.url)
+                                            }
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true
                                             cache: true
@@ -1654,8 +1658,13 @@ ApplicationWindow {
                                                         required property int index
                                                         width: 54
                                                         height: parent.height
-                                                        source: mediaTools.thumbnailAt(timelineClip.modelData.url,
-                                                            Math.max(0, Number(timelineClip.modelData.start || 0) + index * (54 / Math.max(0.001, timelineCanvas.timelineScale))))
+                                                        source: {
+                                                            // Reading this property creates a dependency so Image rechecks
+                                                            // the cache when its async ffmpeg job finishes.
+                                                            var revision = mediaTools.thumbnailRevision
+                                                            return mediaTools.thumbnailAt(timelineClip.modelData.url,
+                                                                Math.max(0, Number(timelineClip.modelData.start || 0) + index * (54 / Math.max(0.001, timelineCanvas.timelineScale))))
+                                                        }
                                                         fillMode: Image.PreserveAspectCrop
                                                         asynchronous: true
                                                         visible: !timelineClip.draggingClip
