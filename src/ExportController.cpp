@@ -105,7 +105,8 @@ ExportController::ExportController(QObject *parent)
             this, &ExportController::handleProcessError);
 }
 
-bool ExportController::startExport(const QVariantList &timelineItems, const QString &outputUrl,\n                                   int width, int height, int fps)
+bool ExportController::startExport(const QVariantList &timelineItems, const QString &outputUrl,
+                                   int width, int height, int fps)
 {
     if (m_running || m_process.state() != QProcess::NotRunning) {
         emit statusChanged(QStringLiteral("Экспорт уже выполняется"));
@@ -116,7 +117,13 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         return false;
     }
 
-    m_outputWidth = qBound(320, width > 0 ? width : 1920, 3840);\n    m_outputHeight = qBound(240, height > 0 ? height : 1080, 2160);\n    if (m_outputWidth % 2 != 0) --m_outputWidth;\n    if (m_outputHeight % 2 != 0) --m_outputHeight;\n    m_outputFps = qBound(1, fps > 0 ? fps : 30, 120);\n\n    m_outputPath = localPath(outputUrl).trimmed();
+    m_outputWidth = qBound(320, width > 0 ? width : 1920, 3840);
+    m_outputHeight = qBound(240, height > 0 ? height : 1080, 2160);
+    if (m_outputWidth % 2 != 0) --m_outputWidth;
+    if (m_outputHeight % 2 != 0) --m_outputHeight;
+    m_outputFps = qBound(1, fps > 0 ? fps : 30, 120);
+
+    m_outputPath = localPath(outputUrl).trimmed();
     if (m_outputPath.isEmpty()) {
         emit exportFailed(QStringLiteral("Не указан путь для экспорта"));
         return false;
