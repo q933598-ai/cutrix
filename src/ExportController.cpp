@@ -1,0 +1,448 @@
+#include "ExportController.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHash>
+#include <QRegularExpression>
+#include <QUrl>
+#include <QVector>
+#include <algorithm>
+#include <cmath>
+
+namespace {
+constexpr int kOutputWidth = 1920;
+constexpr int kOutputHeight = 1080;
+constexpr int kOutputFps = 30;
+
+QString localPath(const QString &value)
+{
+    const QUrl url(value);
+    return url.isLocalFile() ? url.toLocalFile() : value;
+}
+
+QString number(double value)
+{
+    return QString::number(value, 'f', 3);
+}
+
+QString escapeFilterPath(QString path)
+{
+    path.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
+    path.replace(QStringLiteral("'"), QStringLiteral("\\'"));
+    path.replace(QStringLiteral(":"), QStringLiteral("\\:"));
+    path.replace(QStringLiteral(","), QStringLiteral("\\,"));
+    path.replace(QStringLiteral("["), QStringLiteral("\\["));
+    path.replace(QStringLiteral("]"), QStringLiteral("\\]"));
+    return path;
+}
+
+QString runTool(const QString &program, const QStringList &arguments, int timeoutMs = 8000)
+{
+    QProcess process;
+    process.start(program, arguments);
+    if (!process.waitForStarted(1500))
+        return {};
+    if (!process.waitForFinished(timeoutMs)) {
+        process.kill();
+        process.waitForFinished();
+        return {};
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
+        return {};
+    return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+}
+
+bool hasAudioStream(const QString &path)
+{
+    return !runTool(QStringLiteral("ffprobe"), {
+        QStringLiteral("-v"), QStringLiteral("error"),
+        QStringLiteral("-select_streams"), QStringLiteral("a:0"),
+        QStringLiteral("-show_entries"), QStringLiteral("stream=index"),
+        QStringLiteral("-of"), QStringLiteral("csv=p=0"), path
+    }).isEmpty();
+}
+
+double clipDuration(const QVariantMap &item)
+{
+    const double value = item.value(QStringLiteral("duration")).toDouble();
+    if (std::isfinite(value) && value > 0.0)
+        return value;
+    const QString kind = item.value(QStringLiteral("kind")).toString();
+    return (kind == QStringLiteral("image") || kind == QStringLiteral("text")) ? 5.0 : 36.0;
+}
+
+QStringList encoderArguments(bool useGpu)
+{
+    if (useGpu) {
+        return {
+            QStringLiteral("-c:v"), QStringLiteral("h264_nvenc"),
+            QStringLiteral("-preset"), QStringLiteral("p4"),
+            QStringLiteral("-rc"), QStringLiteral("vbr"),
+            QStringLiteral("-cq"), QStringLiteral("23"),
+            QStringLiteral("-b:v"), QStringLiteral("0")
+        };
+    }
+    return {
+        QStringLiteral("-c:v"), QStringLiteral("libx264"),
+        QStringLiteral("-preset"), QStringLiteral("veryfast"),
+        QStringLiteral("-crf"), QStringLiteral("22")
+    };
+}
+}
+
+ExportController::ExportController(QObject *parent)
+    : QObject(parent)
+{
+    connect(&m_process, &QProcess::readyReadStandardOutput,
+            this, &ExportController::readProgressOutput);
+    connect(&m_process, &QProcess::readyReadStandardError, this, [this]() {
+        const QString chunk = QString::fromUtf8(m_process.readAllStandardError());
+        m_lastError += chunk;
+        if (m_lastError.size() > 24000)
+            m_lastError = m_lastError.right(24000);
+    });
+    connect(&m_process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            this, &ExportController::handleFinished);
+    connect(&m_process, &QProcess::errorOccurred,
+            this, &ExportController::handleProcessError);
+}
+
+bool ExportController::startExport(const QVariantList &timelineItems, const QString &outputUrl)
+{
+    if (m_running || m_process.state() != QProcess::NotRunning) {
+        emit statusChanged(QStringLiteral("Экспорт уже выполняется"));
+        return false;
+    }
+    if (!m_temporaryDirectory.isValid()) {
+        emit exportFailed(QStringLiteral("Не удалось создать временную папку для экспорта"));
+        return false;
+    }
+
+    m_outputPath = localPath(outputUrl).trimmed();
+    if (m_outputPath.isEmpty()) {
+        emit exportFailed(QStringLiteral("Не указан путь для экспорта"));
+        return false;
+    }
+    if (!m_outputPath.endsWith(QStringLiteral(".mp4"), Qt::CaseInsensitive))
+        m_outputPath += QStringLiteral(".mp4");
+    const QFileInfo outputInfo(m_outputPath);
+    if (!outputInfo.dir().exists()) {
+        emit exportFailed(QStringLiteral("Папка для экспорта не существует"));
+        return false;
+    }
+
+    QVector<Clip> clips;
+    QVector<Clip> inputClips;
+    m_timelineDuration = 0.0;
+
+    for (const QVariant &value : timelineItems) {
+        const QVariantMap item = value.toMap();
+        const int track = item.value(QStringLiteral("track"), -1).toInt();
+        if (track < 0)
+            continue;
+
+        Clip clip;
+        clip.kind = item.value(QStringLiteral("kind")).toString();
+        clip.text = item.value(QStringLiteral("text")).toString();
+        clip.track = track;
+        clip.start = qMax(0.0, item.value(QStringLiteral("start")).toDouble());
+        clip.duration = clipDuration(item);
+        if (!std::isfinite(clip.start) || !std::isfinite(clip.duration) || clip.duration <= 0.0)
+            continue;
+
+        m_timelineDuration = qMax(m_timelineDuration, clip.start + clip.duration);
+        if (clip.kind == QStringLiteral("text")) {
+            clips.push_back(clip);
+            continue;
+        }
+
+        const bool visual = (clip.kind == QStringLiteral("video") || clip.kind == QStringLiteral("image"))
+            && (track == 0 || track == 1);
+        const bool audio = clip.kind == QStringLiteral("audio") && (track == 2 || track == 3);
+        if (!visual && !audio)
+            continue;
+
+        clip.path = localPath(item.value(QStringLiteral("url")).toString());
+        if (clip.path.isEmpty() || !QFileInfo::exists(clip.path)) {
+            emit exportFailed(QStringLiteral("Файл клипа не найден: ")
+                              + item.value(QStringLiteral("name")).toString());
+            return false;
+        }
+        clip.inputIndex = inputClips.size();
+        inputClips.push_back(clip);
+        clips.push_back(clip);
+    }
+
+    if (clips.isEmpty() || m_timelineDuration <= 0.0) {
+        emit exportFailed(QStringLiteral("На таймлайне нет клипов для экспорта"));
+        return false;
+    }
+
+    QHash<QString, bool> audioCache;
+    for (Clip &clip : inputClips) {
+        if (clip.kind != QStringLiteral("video"))
+            continue;
+        if (!audioCache.contains(clip.path))
+            audioCache.insert(clip.path, hasAudioStream(clip.path));
+        clip.hasAudio = audioCache.value(clip.path);
+    }
+    for (Clip &clip : clips) {
+        if (clip.inputIndex >= 0 && clip.inputIndex < inputClips.size())
+            clip.hasAudio = inputClips[clip.inputIndex].hasAudio;
+    }
+
+    m_baseArguments = {
+        QStringLiteral("-hide_banner"),
+        QStringLiteral("-y"),
+        QStringLiteral("-loglevel"), QStringLiteral("error"),
+        QStringLiteral("-nostats"),
+        QStringLiteral("-progress"), QStringLiteral("pipe:1"),
+        QStringLiteral("-filter_complex_threads"), QStringLiteral("2")
+    };
+
+    for (const Clip &clip : inputClips) {
+        if (clip.kind == QStringLiteral("image")) {
+            m_baseArguments << QStringLiteral("-loop") << QStringLiteral("1")
+                            << QStringLiteral("-framerate") << QString::number(kOutputFps)
+                            << QStringLiteral("-t") << number(clip.duration)
+                            << QStringLiteral("-i") << clip.path;
+        } else {
+            m_baseArguments << QStringLiteral("-i") << clip.path;
+        }
+    }
+
+    QStringList filters;
+    filters << QStringLiteral("color=c=black:s=%1x%2:r=%3:d=%4,format=yuv420p[base0]")
+                   .arg(kOutputWidth).arg(kOutputHeight).arg(kOutputFps)
+                   .arg(number(m_timelineDuration));
+
+    QVector<Clip> visuals;
+    QVector<Clip> titles;
+    QVector<Clip> audioClips;
+    for (const Clip &clip : clips) {
+        if ((clip.kind == QStringLiteral("video") || clip.kind == QStringLiteral("image"))
+                && (clip.track == 0 || clip.track == 1))
+            visuals.push_back(clip);
+        else if (clip.kind == QStringLiteral("text"))
+            titles.push_back(clip);
+        if ((clip.kind == QStringLiteral("audio") && (clip.track == 2 || clip.track == 3))
+                || (clip.kind == QStringLiteral("video") && clip.hasAudio))
+            audioClips.push_back(clip);
+    }
+
+    std::stable_sort(visuals.begin(), visuals.end(), [](const Clip &a, const Clip &b) {
+        if (a.track != b.track)
+            return a.track > b.track;
+        return a.start < b.start;
+    });
+
+    QString currentVideo = QStringLiteral("base0");
+    int visualSerial = 0;
+    for (const Clip &clip : visuals) {
+        const QString label = QStringLiteral("visual%1").arg(visualSerial);
+        filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,fps=%2,scale=%3:%4:force_original_aspect_ratio=decrease,"
+                                 "pad=%3:%4:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+                                 "tpad=stop_mode=clone:stop_duration=%5,trim=duration=%5,"
+                                 "setpts=PTS-STARTPTS+%6/TB[%7]")
+                       .arg(clip.inputIndex).arg(kOutputFps).arg(kOutputWidth).arg(kOutputHeight)
+                       .arg(number(clip.duration)).arg(number(clip.start)).arg(label);
+
+        const QString merged = QStringLiteral("mix%1").arg(visualSerial);
+        filters << QStringLiteral("[%1][%2]overlay=x=0:y=0:eof_action=pass:shortest=0:repeatlast=0:"
+                                 "enable='between(t,%3,%4)'[%5]")
+                       .arg(currentVideo, label, number(clip.start),
+                            number(clip.start + clip.duration), merged);
+        currentVideo = merged;
+        ++visualSerial;
+    }
+
+    std::stable_sort(titles.begin(), titles.end(), [](const Clip &a, const Clip &b) {
+        return a.start < b.start;
+    });
+    int titleSerial = 0;
+    for (const Clip &clip : titles) {
+        const QString textPath = m_temporaryDirectory.filePath(
+            QStringLiteral("title-%1.txt").arg(titleSerial));
+        QFile textFile(textPath);
+        if (!textFile.open(QIODevice::WriteOnly)) {
+            emit exportFailed(QStringLiteral("Не удалось сохранить временный текстовый файл для экспорта"));
+            return false;
+        }
+        textFile.write(clip.text.toUtf8());
+        textFile.close();
+
+        const QString label = QStringLiteral("title%1").arg(titleSerial);
+        filters << QStringLiteral("[%1]drawtext=textfile='%2':fontcolor=white:fontsize=42:borderw=3:"
+                                 "bordercolor=black:x=(w-text_w)/2:y=h*0.78:"
+                                 "enable='between(t,%3,%4)'[%5]")
+                       .arg(currentVideo, escapeFilterPath(textPath), number(clip.start),
+                            number(clip.start + clip.duration), label);
+        currentVideo = label;
+        ++titleSerial;
+    }
+    filters << QStringLiteral("[%1]format=yuv420p[vout]").arg(currentVideo);
+
+    QStringList audioLabels;
+    int audioSerial = 0;
+    for (const Clip &clip : audioClips) {
+        if (clip.kind == QStringLiteral("video") && !clip.hasAudio)
+            continue;
+        const QString label = QStringLiteral("audio%1").arg(audioSerial);
+        const int delay = qMax(0, qRound(clip.start * 1000.0));
+        filters << QStringLiteral("[%1:a:0]atrim=duration=%2,asetpts=PTS-STARTPTS,aresample=48000,"
+                                 "aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=%3|%3[%4]")
+                       .arg(clip.inputIndex).arg(number(clip.duration)).arg(delay).arg(label);
+        audioLabels << QStringLiteral("[%1]").arg(label);
+        ++audioSerial;
+    }
+
+    if (audioLabels.isEmpty()) {
+        filters << QStringLiteral("anullsrc=r=48000:cl=stereo,atrim=duration=%1[aout]")
+                       .arg(number(m_timelineDuration));
+    } else if (audioLabels.size() == 1) {
+        filters << QStringLiteral("%1apad,atrim=duration=%2[aout]")
+                       .arg(audioLabels.front()).arg(number(m_timelineDuration));
+    } else {
+        filters << QStringLiteral("%1amix=inputs=%2:duration=longest:dropout_transition=0:normalize=0,"
+                                 "apad,atrim=duration=%3[aout]")
+                       .arg(audioLabels.join(QString()))
+                       .arg(audioLabels.size())
+                       .arg(number(m_timelineDuration));
+    }
+
+    m_filterGraph = filters.join(QLatin1Char(';'));
+    m_baseArguments << QStringLiteral("-filter_complex") << m_filterGraph
+                    << QStringLiteral("-map") << QStringLiteral("[vout]")
+                    << QStringLiteral("-map") << QStringLiteral("[aout]")
+                    << QStringLiteral("-r") << QString::number(kOutputFps)
+                    << QStringLiteral("-pix_fmt") << QStringLiteral("yuv420p")
+                    << QStringLiteral("-t") << number(m_timelineDuration)
+                    << QStringLiteral("-c:a") << QStringLiteral("aac")
+                    << QStringLiteral("-b:a") << QStringLiteral("192k")
+                    << QStringLiteral("-movflags") << QStringLiteral("+faststart");
+
+    m_fallbackTried = false;
+    m_processErrorHandled = false;
+    setProgress(0.0);
+    setRunning(true);
+    startAttempt(true);
+    return true;
+}
+
+void ExportController::startAttempt(bool useGpuEncoder)
+{
+    m_usingGpuEncoder = useGpuEncoder;
+    m_lastError.clear();
+    m_processErrorHandled = false;
+    QFile::remove(m_outputPath);
+
+    QStringList arguments = m_baseArguments;
+    arguments.append(encoderArguments(useGpuEncoder));
+    arguments << m_outputPath;
+
+    emit statusChanged(useGpuEncoder
+        ? QStringLiteral("Экспорт через NVIDIA NVENC…")
+        : QStringLiteral("Экспорт через CPU (libx264)…"));
+
+    m_process.setProgram(QStringLiteral("ffmpeg"));
+    m_process.setArguments(arguments);
+    m_process.start();
+}
+
+void ExportController::readProgressOutput()
+{
+    const QString output = QString::fromUtf8(m_process.readAllStandardOutput());
+    const QStringList lines = output.split(QLatin1Char('\n'));
+    for (const QString &line : lines) {
+        if (!line.startsWith(QStringLiteral("out_time=")))
+            continue;
+        const QString value = line.mid(9).trimmed();
+        const QStringList parts = value.split(QLatin1Char(':'));
+        if (parts.size() != 3)
+            continue;
+        bool hoursOk = false;
+        bool minutesOk = false;
+        bool secondsOk = false;
+        const double hours = parts[0].toDouble(&hoursOk);
+        const double minutes = parts[1].toDouble(&minutesOk);
+        const double seconds = parts[2].toDouble(&secondsOk);
+        if (!hoursOk || !minutesOk || !secondsOk)
+            continue;
+        const double current = hours * 3600.0 + minutes * 60.0 + seconds;
+        if (m_timelineDuration > 0.0)
+            setProgress(qBound(0.0, current / m_timelineDuration, 0.99));
+    }
+}
+
+void ExportController::handleFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+    if (!m_running || m_processErrorHandled)
+        return;
+    if (exitStatus == QProcess::NormalExit && exitCode == 0
+            && QFileInfo::exists(m_outputPath) && QFileInfo(m_outputPath).size() > 0) {
+        setProgress(1.0);
+        setRunning(false);
+        emit statusChanged(QStringLiteral("Экспорт завершён"));
+        emit exportFinished(QUrl::fromLocalFile(m_outputPath).toString(), m_usingGpuEncoder);
+        return;
+    }
+
+    if (m_usingGpuEncoder && !m_fallbackTried) {
+        m_fallbackTried = true;
+        emit statusChanged(QStringLiteral("NVENC не сработал — повторяю экспорт через CPU"));
+        startAttempt(false);
+        return;
+    }
+
+    setRunning(false);
+    QString message = m_lastError.trimmed();
+    if (message.isEmpty())
+        message = QStringLiteral("FFmpeg завершился с кодом %1").arg(exitCode);
+    emit exportFailed(message);
+}
+
+void ExportController::handleProcessError(QProcess::ProcessError error)
+{
+    if (error != QProcess::FailedToStart || !m_running || m_processErrorHandled)
+        return;
+    m_processErrorHandled = true;
+    if (m_usingGpuEncoder && !m_fallbackTried) {
+        m_fallbackTried = true;
+        m_processErrorHandled = false;
+        emit statusChanged(QStringLiteral("Не удалось запустить NVENC-экспорт — пробую CPU"));
+        startAttempt(false);
+        return;
+    }
+    setRunning(false);
+    emit exportFailed(QStringLiteral("Не удалось запустить ffmpeg. Установи пакет ffmpeg."));
+}
+
+void ExportController::setRunning(bool running)
+{
+    if (m_running == running)
+        return;
+    m_running = running;
+    emit runningChanged();
+}
+
+void ExportController::setProgress(double progress)
+{
+    const double bounded = qBound(0.0, progress, 1.0);
+    if (qFuzzyCompare(m_progress + 1.0, bounded + 1.0))
+        return;
+    m_progress = bounded;
+    emit progressChanged();
+}
+
+void ExportController::cancel()
+{
+    if (!m_running)
+        return;
+    m_processErrorHandled = true;
+    m_process.kill();
+    m_process.waitForFinished(1000);
+    setRunning(false);
+    emit statusChanged(QStringLiteral("Экспорт отменён"));
+}
