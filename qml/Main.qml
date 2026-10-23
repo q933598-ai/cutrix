@@ -1581,9 +1581,55 @@ ApplicationWindow {
                                             property real dragStartClipX: 0
                                             property real dragStartClipY: 2
                                             property bool draggingClip: false
-                                            x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
+
+                                            property string resizingEdge: ""
+                                            property real resizeAnchorX: 0
+                                            property real resizeOriginalStart: 0
+                                            property real resizeOriginalDuration: 1
+                                            property real resizePreviewDuration: 1
+                                            function beginResize(sceneX) {
+                                                resizingEdge = "right"
+                                                resizeAnchorX = sceneX
+                                                resizeOriginalStart = Number(modelData.start || 0)
+                                                resizeOriginalDuration = root.timelineClipDuration(modelData)
+                                                resizePreviewDuration = resizeOriginalDuration
+                                                draggingClip = false
+                                            }
+                                            function updateResize(sceneX) {
+                                                var delta = (sceneX - resizeAnchorX) / Math.max(0.001, timelineCanvas.timelineScale)
+                                                var maxDuration = 1000000
+                                                var originalEnd = resizeOriginalStart + resizeOriginalDuration
+                                                for (var i = 0; i < root.mediaFiles.length; ++i) {
+                                                    var other = root.mediaFiles[i]
+                                                    if (String(other.clipId || "") === String(modelData.clipId || "")
+                                                            || Number(other.track) !== Number(modelData.track))
+                                                        continue
+                                                    var otherStart = Number(other.start || 0)
+                                                    if (otherStart >= originalEnd - 0.001)
+                                                        maxDuration = Math.min(maxDuration, otherStart - resizeOriginalStart)
+                                                }
+                                                resizePreviewDuration = Math.max(0.5, Math.min(maxDuration,
+                                                    Math.round((resizeOriginalDuration + delta) * 10) / 10))
+                                            }
+                                            function finishResize() {
+                                                if (resizingEdge === "") return
+                                                var newDuration = resizePreviewDuration
+                                                var clipId = String(modelData.clipId || "")
+                                                resizingEdge = ""
+                                                var updated = root.mediaFiles.slice()
+                                                for (var i = 0; i < updated.length; ++i) {
+                                                    if (String(updated[i].clipId || "") === clipId) {
+                                                        updated[i] = Object.assign({}, updated[i], { duration: newDuration })
+                                                        break
+                                                    }
+                                                }
+                                                root.mediaFiles = updated
+                                                root.saveTimelineMedia(updated)
+                                                root.statusMessage = "Длина клипа изменена"
+                                            }                                            x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
                                                + (draggingClip ? dragOffsetX : 0)
-                                            width: Math.max(3, Number(modelData.duration || 36) * timelineCanvas.timelineScale)
+                                            width: Math.max(3, (resizingEdge !== "" ? resizePreviewDuration : root.timelineClipDuration(modelData))
+                                                            * timelineCanvas.timelineScale)
                                             height: 30
                                             y: 2 + (draggingClip ? dragOffsetY : 0)
                                             clip: true
@@ -1697,6 +1743,27 @@ ApplicationWindow {
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
                                                 }
                                             }
+                                             Rectangle {
+                                                 anchors.right: parent.right
+                                                 anchors.top: parent.top
+                                                 anchors.bottom: parent.bottom
+                                                 width: 7
+                                                 color: "#dce5ff"
+                                                 opacity: 0.9
+                                                 visible: !timelineClip.draggingClip
+                                                 z: 30
+                                                 MouseArea {
+                                                     anchors.fill: parent
+                                                     cursorShape: Qt.SizeHorCursor
+                                                     onPressed: function(mouse) {
+                                                         timelineClip.beginResize(mapToItem(timelineCanvas, mouse.x, mouse.y).x)
+                                                     }
+                                                     onPositionChanged: function(mouse) {
+                                                         if (pressed) timelineClip.updateResize(mapToItem(timelineCanvas, mouse.x, mouse.y).x)
+                                                     }
+                                                     onReleased: timelineClip.finishResize()
+                                                 }
+                                             }
                                         }
                                     }
                                     DropArea {
