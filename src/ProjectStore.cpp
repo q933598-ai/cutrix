@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
+#include <QStandardPaths>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -50,6 +52,31 @@ QVariantList ProjectStore::recentProjects() const
         result.append(item);
     }
     return result;
+}
+
+QString ProjectStore::chooseProjectSavePath(const QString &suggestedName)
+{
+    QString safeName = suggestedName.trimmed();
+    for (QChar &ch : safeName) {
+        if (ch == QLatin1Char('/') || ch == QLatin1Char('\\\\') || ch == QLatin1Char(':')
+                || ch == QLatin1Char('*') || ch == QLatin1Char('?') || ch == QLatin1Char('"')
+                || ch == QLatin1Char('<') || ch == QLatin1Char('>') || ch == QLatin1Char('|'))
+            ch = QLatin1Char('_');
+    }
+    if (safeName.isEmpty()) safeName = QStringLiteral("Мой проект");
+    if (!safeName.endsWith(QStringLiteral(".cutrix"), Qt::CaseInsensitive))
+        safeName += QStringLiteral(".cutrix");
+
+    const QString documents = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    QFileDialog dialog(nullptr, QStringLiteral("Сохранить проект Cutrix"),
+                       QDir(documents).filePath(safeName));
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setNameFilter(QStringLiteral("Проект Cutrix (*.cutrix)"));
+    dialog.setDefaultSuffix(QStringLiteral("cutrix"));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty())
+        return QString();
+    return dialog.selectedFiles().constFirst();
 }
 
 bool ProjectStore::createProject(const QString &path, const QString &name,
