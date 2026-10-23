@@ -378,16 +378,25 @@ ApplicationWindow {
                 mediaPlayer.pause()
                 return
             }
-            // When a clip is actually playing, use its real decoder position
-            // as the timeline clock. A fixed timer increment drifts from video/audio.
             var currentClip = root.timelineVideoAt(root.timelinePosition)
-            if (currentClip
-                    && String(currentClip.url) === String(root.timelinePreviewUrl)
-                    && mediaPlayer.playbackState === MediaPlayer.PlayingState
-                    && root.timelineSeekPending < 0) {
-                root.timelinePosition = Number(currentClip.start || 0) + mediaPlayer.position / 1000
+            if (currentClip) {
+                // Do not advance the playhead while the decoder switches to this clip.
+                // Otherwise the timeline can pass the entire clip before it starts playing.
+                if (String(currentClip.url) !== String(root.timelinePreviewUrl)
+                        || root.timelineSeekPending >= 0
+                        || mediaPlayer.mediaStatus !== MediaPlayer.LoadedMedia) {
+                    root.updateTimelinePreview(root.timelinePosition)
+                    return
+                }
+                if (mediaPlayer.playbackState === MediaPlayer.PlayingState) {
+                    // The decoder is the clock while video is playing.
+                    root.timelinePosition = Number(currentClip.start || 0) + mediaPlayer.position / 1000
+                } else {
+                    mediaPlayer.play()
+                    return
+                }
             } else {
-                // Keep the timeline moving across gaps and while the next source loads.
+                // Empty timeline gaps advance in timeline time, not decoder time.
                 root.timelinePosition = Math.min(root.timelineDuration,
                                                  root.timelinePosition + interval / 1000)
             }
@@ -398,11 +407,6 @@ ApplicationWindow {
                 return
             }
             root.updateTimelinePreview(root.timelinePosition)
-            var clip = root.timelineVideoAt(root.timelinePosition)
-            if (clip && mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
-                    && mediaPlayer.playbackState !== MediaPlayer.PlayingState
-                    && root.timelineSeekPending < 0)
-                mediaPlayer.play()
         }
     }
 
