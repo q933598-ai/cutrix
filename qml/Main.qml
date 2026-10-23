@@ -1302,6 +1302,9 @@ ApplicationWindow {
                                                     timelineClip.x = desiredStart * 3
                                                 }
                                             }
+                                        }
+                                    }
+                                    DropArea {
                                         anchors.fill: parent
                                         onEntered: function(drag) {
                                             timelineTrack.dropHover = true
