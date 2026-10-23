@@ -972,11 +972,11 @@ ApplicationWindow {
                         Layout.fillHeight: true
                         spacing: 3
                         Repeater {
-                            model: ["◉ Видео 1", "◉ Видео 2", "T Текст", "♫ Аудио 1", "♫ Аудио 2"]
+                            model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО"]
                             delegate: Rectangle {
                                 required property string modelData
                                 width: parent.width
-                                height: 22
+                                height: 25
                                 color: theme.panelAlt
                                 border.color: theme.border
                                 Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
@@ -1011,33 +1011,50 @@ ApplicationWindow {
                                 }
                             }
                             Repeater {
-                                model: [
-                                    [{x: 0.01, w: 0.43, t: "city.mp4", c: "#315b9b"}, {x: 0.44, w: 0.29, t: "mountains.mp4", c: "#347e80"}, {x: 0.74, w: 0.24, t: "sunset.mp4", c: "#89517d"}],
-                                    [{x: 0.10, w: 0.25, t: "intro.mp4", c: "#51428c"}, {x: 0.57, w: 0.24, t: "room.mp4", c: "#51428c"}],
-                                    [{x: 0.10, w: 0.36, t: "T Добро пожаловать!", c: "#6543a8"}, {x: 0.60, w: 0.30, t: "T Cutrix", c: "#6543a8"}],
-                                    [{x: 0.01, w: 0.70, t: "♫ bg-music.mp3", c: "#226d6c"}],
-                                    [{x: 0.48, w: 0.48, t: "♫ voice.wav", c: "#226d6c"}]
-                                ]
+                                model: ["V2", "V1", "A1", "A2"]
                                 delegate: Item {
-                                    required property var modelData
+                                    id: timelineTrack
+                                    required property string modelData
+                                    required property int index
                                     width: parent.width
-                                    height: 22
+                                    height: 25
+                                    Rectangle { anchors.fill: parent; color: index % 2 === 0 ? theme.panel : theme.background; border.color: theme.border; opacity: 0.95 }
                                     Repeater {
-                                        model: parent.modelData
+                                        model: root.mediaFiles.filter(function(m) { return Number(m.track) === timelineTrack.index })
                                         delegate: Rectangle {
                                             required property var modelData
-                                            x: modelData.x * parent.width
-                                            width: modelData.w * parent.width
-                                            height: 19
-                                            color: modelData.c
-                                            border.color: Qt.lighter(modelData.c, 1.25)
-                                            radius: 2
-                                            Text { anchors.fill: parent; anchors.leftMargin: 5; text: modelData.t; color: "#f0f2ff"; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                                            x: Math.max(0, Number(modelData.start || 0) * 3)
+                                            width: Math.max(90, Number(modelData.duration || 36) * 3)
+                                            height: 21
+                                            y: 2
+                                            color: /\\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(modelData.name) ? "#226d6c" : "#315b9b"
+                                            border.color: theme.accent
+                                            Text { anchors.fill: parent; anchors.leftMargin: 5; text: modelData.name; color: "#f0f2ff"; font.family: "monospace"; font.pixelSize: 10; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                                        }
+                                    }
+                                    DropArea {
+                                        anchors.fill: parent
+                                        onDropped: function(drop) {
+                                            var url = drop.getDataAsString("text/plain")
+                                            var updated = root.mediaFiles.slice()
+                                            var found = false
+                                            for (var i = 0; i < updated.length; ++i) {
+                                                if (updated[i].url === url) {
+                                                    updated[i] = Object.assign({}, updated[i], { track: timelineTrack.index, start: 0, duration: updated[i].duration || 36 })
+                                                    found = true
+                                                    break
+                                                }
+                                            }
+                                            if (found) {
+                                                root.mediaFiles = updated
+                                                if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
+                                                root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
+                                                drop.acceptProposedAction()
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
                         Rectangle {
                             x: parent.width * 0.34
                             y: 20
