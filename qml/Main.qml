@@ -396,8 +396,7 @@ ApplicationWindow {
                         && String(currentClip.url) === String(root.timelinePreviewUrl)
                         && Number(currentClip.start || 0) === Number(root.timelinePreviewClipStart)
                         && (mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
-                            || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia
-                            || mediaPlayer.mediaStatus === MediaPlayer.EndOfMedia)) {
+                            || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia)) {
                     var seekTarget = root.timelineSeekPending * 1000
                     mediaPlayer.position = seekTarget
                     root.timelineSeekPending = -1
@@ -456,8 +455,7 @@ ApplicationWindow {
         }
         onMediaStatusChanged: {
             if (mediaStatus === MediaPlayer.LoadedMedia
-                    || mediaStatus === MediaPlayer.BufferedMedia
-                    || mediaStatus === MediaPlayer.EndOfMedia) {
+                    || mediaStatus === MediaPlayer.BufferedMedia) {
                 if (root.timelineSeekPending >= 0) {
                     mediaPlayer.position = root.timelineSeekPending * 1000
                     root.timelineSeekPending = -1
