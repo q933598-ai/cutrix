@@ -1319,40 +1319,46 @@ ApplicationWindow {
                                             timelineTrack.dropHover = false
                                             var url = drop.getDataAsString("text/plain")
                                             var updated = root.mediaFiles.slice()
-                                            var found = false
+                                            var sourceIndex = -1
                                             for (var i = 0; i < updated.length; ++i) {
-                                                if (String(updated[i].url) === String(url)) {
-                                                    updated[i] = Object.assign({}, updated[i], {
-                                                        track: timelineTrack.index,
-                                                        start: Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale))),
-                                                        duration: updated[i].duration || 36
-                                                    })
-                                                    found = true
+                                                if (String(updated[i].url) === String(url) && Number(updated[i].track) < 0) {
+                                                    sourceIndex = i
                                                     break
                                                 }
                                             }
-                                            if (found) {
-                                                var moved = updated.find(function(item) { return String(item.url) === String(url) })
-                                                var movedStart = Number(moved.start || 0)
-                                                var movedEnd = movedStart + Number(moved.duration || 36)
-                                                var collision = updated.some(function(item) {
-                                                    if (String(item.url) === String(url) || Number(item.track) !== timelineTrack.index) return false
-                                                    var otherStart = Number(item.start || 0)
-                                                    var otherEnd = otherStart + Number(item.duration || 36)
-                                                    return movedStart < otherEnd && movedEnd > otherStart
-                                                })
-                                                if (collision) {
-                                                    root.statusMessage = "На этой дорожке уже есть клип в этом месте"
-                                                    return
-                                                }
-                                                root.mediaFiles = updated
-                                                root.saveTimelineMedia(updated)
-                                                root.timelinePosition = movedStart
-                                                root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
-                                                drop.acceptProposedAction()
-                                            } else {
-                                                root.statusMessage = "Не удалось определить перетаскиваемый файл"
+                                            if (sourceIndex < 0) {
+                                                root.statusMessage = "Не удалось найти исходный медиафайл"
+                                                return
                                             }
+
+                                            // Each drop creates a separate timeline instance, even when
+                                            // the same source file is used more than once.
+                                            var source = updated[sourceIndex]
+                                            var start = Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale)))
+                                            var duration = Math.max(1, Number(source.duration || 36))
+                                            var end = start + duration
+                                            var collision = updated.some(function(item) {
+                                                if (Number(item.track) !== timelineTrack.index) return false
+                                                var otherStart = Math.max(0, Number(item.start || 0))
+                                                var otherEnd = otherStart + Math.max(1, Number(item.duration || 36))
+                                                return start < otherEnd && end > otherStart
+                                            })
+                                            if (collision) {
+                                                root.statusMessage = "На этой дорожке уже есть клип в этом месте"
+                                                return
+                                            }
+
+                                            var clip = Object.assign({}, source, {
+                                                track: timelineTrack.index,
+                                                start: start,
+                                                duration: duration
+                                            })
+                                            updated.push(clip)
+                                            root.mediaFiles = updated
+                                            root.saveTimelineMedia(updated)
+                                            root.timelinePosition = start
+                                            root.statusMessage = "Клип добавлен на " + timelineTrack.modelData
+                                            drop.acceptProposedAction()
                                         }
                                     }
                                 }
