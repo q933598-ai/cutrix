@@ -41,7 +41,7 @@ ApplicationWindow {
         var end = 0
         for (var i = 0; i < mediaFiles.length; ++i) {
             if (Number(mediaFiles[i].track) >= 0)
-                end = Math.max(end, Number(mediaFiles[i].start || 0) + Math.max(1, Number(mediaFiles[i].duration || 36)))
+                end = Math.max(end, Number(mediaFiles[i].start || 0) + Math.max(0.25, timelineClipDuration(mediaFiles[i])))
         }
         return end
     }
@@ -49,6 +49,8 @@ ApplicationWindow {
     property string timelinePreviewClipId: ""
     property real timelinePreviewClipStart: -1
     property bool timelinePreviewActive: false
+    property string timelineImageUrl: ""
+    property bool timelineImageActive: false
     property real timelineSeekPending: -1
     property int timelineClipSerial: 0
 
@@ -75,7 +77,9 @@ ApplicationWindow {
 
     function timelineClipDuration(item) {
         var value = Number(item.duration)
-        return isFinite(value) && value > 0 ? value : 36
+        if (isFinite(value) && value > 0) return value
+        if (item && (item.kind === "image" || item.kind === "text")) return 5
+        return 36
     }
 
     function timelineClipById(id) {
@@ -205,7 +209,7 @@ ApplicationWindow {
             return (Number(item.track) === 0 || Number(item.track) === 1)
                 && item.kind !== "audio" && item.kind !== "text"
                 && Number(item.start || 0) <= seconds
-                && Number(item.start || 0) + Number(item.duration || 0) > seconds
+                && Number(item.start || 0) + timelineClipDuration(item) > seconds
         })
         if (candidates.length === 0) return null
         // V2 находится выше V1 и перекрывает его.
@@ -242,6 +246,8 @@ ApplicationWindow {
         var clip = timelineVideoAt(seconds)
         timelinePreviewActive = true
         if (!clip) {
+            timelineImageActive = false
+            timelineImageUrl = ""
             mediaPlayer.pause()
             timelinePreviewUrl = ""
             timelinePreviewClipId = ""
@@ -250,14 +256,27 @@ ApplicationWindow {
             return
         }
 
-        var url = String(clip.url)
+        var url = String(clip.url || "")
         var clipId = String(clip.clipId || "")
         var clipStart = Number(clip.start || 0)
         var offset = Math.max(0, seconds - clipStart)
 
-        // Switch by timeline-instance ID, not only by URL. Two clips can use
-        // the same file but still require a seek back to their own in-point.
-        if (url !== String(timelinePreviewUrl) || clipId !== String(timelinePreviewClipId)) {
+        // QMediaPlayer decodes video; render still-image files in a QML Image.
+        if (clip.kind === "image") {
+            timelineImageActive = true
+            timelineImageUrl = url
+            mediaPlayer.pause()
+            timelinePreviewUrl = ""
+            timelinePreviewClipId = clipId
+            timelinePreviewClipStart = clipStart
+            timelineSeekPending = -1
+            return
+        }
+
+        timelineImageActive = false
+        timelineImageUrl = ""
+        if (url !== String(timelinePreviewUrl) || clipId !== String(timelinePreviewClipId)
+                || clipStart !== timelinePreviewClipStart) {
             mediaPlayer.pause()
             timelinePreviewUrl = url
             timelinePreviewClipId = clipId
@@ -271,7 +290,7 @@ ApplicationWindow {
     }
 
     function handleTimelineEndOfMedia() {
-        if (!timelinePlaybackTimer.running) return
+        if (!timelinePlaybackTimer.running || timelineImageActive) return
 
         // EndOfMedia is a real transition, not a normal stopped state. Move
         // to the end of the clip that actually finished, even if the timer's
@@ -561,6 +580,29 @@ ApplicationWindow {
                 if (audioPlayer) audioPlayer.syncToTimeline()
             }
             var currentClip = root.timelineVideoAt(root.timelinePosition)
+            if (currentClip && currentClip.kind === "image") {
+                var imageClipId = String(currentClip.clipId || "")
+                if (!root.timelineImageActive
+                        || imageClipId !== String(root.timelinePreviewClipId)
+                        || String(currentClip.url || "") !== String(root.timelineImageUrl)) {
+                    root.updateTimelinePreview(root.timelinePosition)
+                    return
+                }
+
+                // Still images have no decoder clock; advance with the montage timer.
+                root.timelinePosition = Math.min(root.timelineDuration,
+                                                 root.timelinePosition + interval / 1000)
+                if (root.timelinePosition >= root.timelineDuration) {
+                    root.timelinePosition = root.timelineDuration
+                    stop()
+                    mediaPlayer.pause()
+                    root.updateTimelinePreview(root.timelinePosition)
+                    return
+                }
+                root.updateTimelinePreview(root.timelinePosition)
+                return
+            }
+
             if (currentClip) {
                 var currentId = String(currentClip.clipId || "")
                 var sameClip = currentId !== "" && currentId === String(root.timelinePreviewClipId)
@@ -617,7 +659,7 @@ ApplicationWindow {
     Instantiator {
         id: timelineAudioPlayers
         model: root.mediaFiles.filter(function(item) {
-            return item.kind === "audio" && (Number(item.track) === 2 || Number(item.track) === 3)
+            return item.kind === "audio" && Number(item.track) >= 0
         })
         delegate: MediaPlayer {
             required property var modelData
@@ -1287,6 +1329,19 @@ ApplicationWindow {
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
                             visible: true
+                            z: 0
+                        }
+
+                        Image {
+                            id: timelineImagePreview
+                            anchors.fill: parent
+                            source: root.timelineImageActive && root.timelinePreviewActive
+                                    ? root.timelineImageUrl : ""
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            cache: true
+                            visible: root.timelineImageActive && root.timelinePreviewActive
+                            z: 1
                         }
 
                         Text {
@@ -1306,7 +1361,7 @@ ApplicationWindow {
                             text: {
                                 var activeText = root.mediaFiles.filter(function(item) {
                                     return item.kind === "text"
-                                        && (Number(item.track) === 0 || Number(item.track) === 1 || Number(item.track) === 4)
+                                        && Number(item.track) >= 0
                                         && Number(item.start || 0) <= root.timelinePosition
                                         && Number(item.start || 0) + root.timelineClipDuration(item) > root.timelinePosition
                                 })
@@ -1317,8 +1372,9 @@ ApplicationWindow {
 
                         Rectangle {
                             anchors.fill: parent
-                            visible: !mediaPlayer.hasVideo
+                            visible: !mediaPlayer.hasVideo && !root.timelineImageActive
                             color: theme.background
+                            z: 0
                             Column {
                                 anchors.centerIn: parent
                                 spacing: 8
@@ -1452,12 +1508,13 @@ ApplicationWindow {
                         Layout.preferredWidth: 150
                         Layout.fillHeight: true
                         spacing: 3
+                        Item { width: parent.width; height: 22 }
                         Repeater {
-                            model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО"]
+                            model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
                             delegate: Rectangle {
                                 required property string modelData
                                 width: parent.width
-                                height: 25
+                                height: 34
                                 color: theme.panelAlt
                                 border.color: theme.border
                                 Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
