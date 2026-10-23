@@ -384,7 +384,8 @@ ApplicationWindow {
                 // Otherwise the timeline can pass the entire clip before it starts playing.
                 if (String(currentClip.url) !== String(root.timelinePreviewUrl)
                         || root.timelineSeekPending >= 0
-                        || mediaPlayer.mediaStatus !== MediaPlayer.LoadedMedia) {
+                        || (mediaPlayer.mediaStatus !== MediaPlayer.LoadedMedia
+                            && mediaPlayer.mediaStatus !== MediaPlayer.BufferedMedia)) {
                     root.updateTimelinePreview(root.timelinePosition)
                     return
                 }
