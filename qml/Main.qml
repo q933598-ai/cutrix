@@ -996,6 +996,7 @@ ApplicationWindow {
             root.mediaFiles = updated
             root.saveTimelineMedia(updated)
             root.timelinePosition = start
+            root.updateTimelinePreview(start)
             root.statusMessage = "Добавлен текстовый клип на 5 секунд"
         }
         contentItem: ColumnLayout {
@@ -2213,6 +2214,8 @@ ApplicationWindow {
                                                     if (!wasDragging) {
                                                          root.selectedTimelineClipId = String(timelineClip.modelData.clipId || "")
                                                          root.selectedMedia = String(timelineClip.modelData.name || "")
+                                                         root.timelinePosition = Number(timelineClip.modelData.start || 0)
+                                                         root.updateTimelinePreview(root.timelinePosition)
                                                          return
                                                      }
 
@@ -2336,6 +2339,7 @@ ApplicationWindow {
                                              root.mediaFiles = updated
                                             root.saveTimelineMedia(updated)
                                             root.timelinePosition = start
+                                             root.updateTimelinePreview(start)
                                             var actualTrackName = ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"][targetTrack]
                                              root.statusMessage = didSnap
                                                  ? "Клип размещён рядом на " + actualTrackName
