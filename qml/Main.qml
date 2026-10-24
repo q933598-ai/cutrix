@@ -1860,7 +1860,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             from: -1920; to: 1920; editable: true
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "x", 0))
-                            enabled: !!root.selectedTimelineClip
+                            enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("x", value)
                         }
                         Text { text: "Y"; color: theme.text; font.family: "monospace" }
@@ -1868,7 +1868,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             from: -1080; to: 1080; editable: true
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "y", 0))
-                            enabled: !!root.selectedTimelineClip
+                            enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("y", value)
                         }
                         Text { text: "Масштаб %"; color: theme.text; font.family: "monospace" }
@@ -1876,7 +1876,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             from: 10; to: 300; editable: true
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "scale", 100))
-                            enabled: !!root.selectedTimelineClip
+                            enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("scale", value)
                         }
                         Text { text: "Поворот °"; color: theme.text; font.family: "monospace" }
@@ -1884,7 +1884,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             from: -180; to: 180; editable: true
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "rotation", 0))
-                            enabled: !!root.selectedTimelineClip
+                            enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("rotation", value)
                         }
                     }
