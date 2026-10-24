@@ -73,6 +73,7 @@ QVariantMap MediaTools::inspect(const QString &url) const
     }
     if (durationOk && std::isfinite(duration) && duration >= 0.0)
         result.insert("duration", duration);
+    result.insert("hasAudio", hasAudio);
 
     const QString suffix = info.suffix().toLower();
     if (QStringList{"png","jpg","jpeg","webp","bmp","gif","tif","tiff"}.contains(suffix))
