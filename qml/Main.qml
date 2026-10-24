@@ -81,6 +81,7 @@ ApplicationWindow {
     property real timelineSeekPending: -1
     property int timelineClipSerial: 0
     property string contextMenuClipId: ""
+    property real contextMenuTimelinePosition: 0
     // Temporary transform values update the preview every frame and are saved
     // to the project only when the user releases a transform handle.
     property var transformPreviewOverride: ({})
@@ -888,6 +889,9 @@ ApplicationWindow {
         MenuItem {
             text: "Разрезать по курсору"
             onTriggered: {
+                // Use the playhead position captured before the context menu opened.
+                root.timelinePosition = root.contextMenuTimelinePosition
+                root.updateTimelinePreview(root.timelinePosition)
                 root.selectedTimelineClipId = root.contextMenuClipId
                 root.splitSelectedTimelineClip()
             }
@@ -2753,6 +2757,7 @@ ApplicationWindow {
                                             property real dragStartClipX: 0
                                             property real dragStartClipY: 2
                                             property bool draggingClip: false
+                                            property bool rightClickPending: false
 
                                             property string resizingEdge: ""
                                             property real resizeAnchorX: 0
@@ -2851,9 +2856,10 @@ ApplicationWindow {
                                                 cursorShape: pressed && mouseButtons === Qt.LeftButton
                                                     ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
-                                                    if (mouse.button === Qt.RightButton) {
+                                                    rightClickPending = mouse.button === Qt.RightButton
+                                                    if (rightClickPending) {
                                                         root.contextMenuClipId = String(timelineClip.modelData.clipId || "")
-                                                        timelineClipContextMenu.popup()
+                                                        root.contextMenuTimelinePosition = root.timelinePosition
                                                         mouse.accepted = true
                                                         return
                                                     }
@@ -2887,9 +2893,17 @@ ApplicationWindow {
                                                     timelineClip.dragOffsetY = previewY - 2
                                                 }
                                                 onReleased: function(mouse) {
-                                                    // Right-click opens the context menu; it must not trigger
-                                                    // the normal click behavior that seeks to the clip start.
-                                                    if (mouse.button === Qt.RightButton) return
+                                                    // QML's release event may not reliably preserve mouse.button
+                                                    // after a popup interaction; remember the initiating press.
+                                                    if (rightClickPending || mouse.button === Qt.RightButton) {
+                                                        rightClickPending = false
+                                                        // Guard against any other timeline handler moving the playhead.
+                                                        root.timelinePosition = root.contextMenuTimelinePosition
+                                                        root.updateTimelinePreview(root.timelinePosition)
+                                                        timelineClipContextMenu.popup()
+                                                        mouse.accepted = true
+                                                        return
+                                                    }
                                                     var wasDragging = draggingClip
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     var draggedX = timelineClip.x
