@@ -142,7 +142,7 @@ QString MediaTools::thumbnailAtSize(const QString &url, double seconds, int maxW
 
     const QString seek = QString::number(safeSeconds, 'f', 2);
     QPointer<MediaTools> guardedThis(this);
-    m_thumbnailPool.start(QRunnable::create([guardedThis, path, output, key, seek]() {
+    m_thumbnailPool.start(QRunnable::create([guardedThis, path, output, key, seek, maxWidth]() {
         QFile::remove(output);
         runTool("ffmpeg", {
             "-hide_banner", "-loglevel", "error", "-threads", "1",
