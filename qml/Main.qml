@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtMultimedia
 import QtCore
+import QtQuick.Effects
 
 ApplicationWindow {
     id: root
@@ -14,6 +15,16 @@ ApplicationWindow {
     minimumHeight: 680
     title: "Cutrix — Pixel Video Editor"
     color: theme.background
+    palette.window: theme.panel
+    palette.windowText: theme.text
+    palette.base: theme.background
+    palette.alternateBase: theme.panelAlt
+    palette.text: theme.text
+    palette.button: theme.panelAlt
+    palette.buttonText: theme.text
+    palette.highlight: theme.accent
+    palette.highlightedText: theme.background
+    palette.placeholderText: theme.muted
 
     property string currentTheme: projectStore.savedTheme()
     property string selectedMedia: ""
@@ -66,6 +77,10 @@ ApplicationWindow {
     property real timelineSeekPending: -1
     property int timelineClipSerial: 0
     property string contextMenuClipId: ""
+    // Temporary transform values update the preview every frame and are saved
+    // to the project only when the user releases a transform handle.
+    property var transformPreviewOverride: ({})
+    property var transformGesture: null
 
     function formatTime(seconds) {
         var value = Number(seconds)
@@ -104,6 +119,12 @@ ApplicationWindow {
     }
 
     function timelineClipProperty(item, key, fallback) {
+        if (item && String(item.clipId || "") !== ""
+                && String(item.clipId) === String(selectedTimelineClipId || "")
+                && transformPreviewOverride && transformPreviewOverride[key] !== undefined) {
+            var previewValue = Number(transformPreviewOverride[key])
+            if (isFinite(previewValue)) return previewValue
+        }
         if (!item || item[key] === undefined || item[key] === null || item[key] === "")
             return fallback
         var value = Number(item[key])
@@ -138,7 +159,7 @@ ApplicationWindow {
         return active.length ? active[active.length - 1] : null
     }
 
-    function setSelectedClipProperty(key, value) {
+    function setSelectedClipProperty(key, value, persist) {
         var id = String(selectedTimelineClipId || "")
         if (id === "") return
         var updated = mediaFiles.slice()
@@ -147,11 +168,105 @@ ApplicationWindow {
                 updated[i] = Object.assign({}, updated[i])
                 updated[i][key] = value
                 mediaFiles = updated
-                saveTimelineMedia(updated)
-                statusMessage = "Свойство клипа обновлено"
+                if (persist !== false) {
+                    saveTimelineMedia(updated)
+                    statusMessage = "Свойство клипа обновлено"
+                }
                 return
             }
         }
+    }
+
+    function previewHasSelectedTransformClip() {
+        if (!selectedClipCanTransform || !timelinePreviewActive) return false
+        if (selectedTimelineClip.kind === "text") {
+            var title = timelineTextAt(timelinePosition)
+            return !!title && String(title.clipId || "") === String(selectedTimelineClipId)
+        }
+        var visual = timelineVideoAt(timelinePosition)
+        return !!visual && String(visual.clipId || "") === String(selectedTimelineClipId)
+    }
+
+    function beginTransformGesture(mode, sceneX, sceneY) {
+        var clip = selectedTimelineClip
+        if (!clip || previewCanvas.width <= 0 || previewCanvas.height <= 0) return
+        var centerX = previewCanvas.width / 2
+            + timelinePreviewOffsetX(clip, previewCanvas.width)
+        var centerY = previewCanvas.height / 2
+            + timelinePreviewOffsetY(clip, previewCanvas.height)
+        var dx = sceneX - centerX
+        var dy = sceneY - centerY
+        transformGesture = {
+            mode: mode,
+            startX: sceneX,
+            startY: sceneY,
+            clipX: timelineClipProperty(clip, "x", 0),
+            clipY: timelineClipProperty(clip, "y", 0),
+            scale: timelineClipProperty(clip, "scale", 100),
+            rotation: timelineClipProperty(clip, "rotation", 0),
+            centerX: centerX,
+            centerY: centerY,
+            startDistance: Math.max(1, Math.sqrt(dx * dx + dy * dy)),
+            startAngle: Math.atan2(dy, dx)
+        }
+        transformPreviewOverride = ({})
+    }
+
+    function updateTransformGesture(mode, sceneX, sceneY) {
+        if (!transformGesture || transformGesture.mode !== mode) return
+        var g = transformGesture
+        var draft = Object.assign({}, transformPreviewOverride)
+        if (mode === "move") {
+            draft.x = Math.round(g.clipX
+                + (sceneX - g.startX) * projectFrameWidth() / Math.max(1, previewCanvas.width))
+            draft.y = Math.round(g.clipY
+                + (sceneY - g.startY) * projectFrameHeight() / Math.max(1, previewCanvas.height))
+        } else if (mode === "scale") {
+            var dx = sceneX - g.centerX
+            var dy = sceneY - g.centerY
+            var distance = Math.sqrt(dx * dx + dy * dy)
+            draft.scale = Math.round(Math.max(10, Math.min(300,
+                g.scale * distance / g.startDistance)))
+        } else if (mode === "rotate") {
+            var angle = Math.atan2(sceneY - g.centerY, sceneX - g.centerX)
+            var delta = angle - g.startAngle
+            while (delta > Math.PI) delta -= Math.PI * 2
+            while (delta < -Math.PI) delta += Math.PI * 2
+            draft.rotation = Math.max(-180, Math.min(180,
+                Math.round(g.rotation + delta * 180 / Math.PI)))
+        }
+        transformPreviewOverride = draft
+    }
+
+    function commitTransformGesture() {
+        if (!transformGesture) return
+        var g = transformGesture
+        var draft = Object.assign({}, transformPreviewOverride)
+        if (g.mode === "move") {
+            if (draft.x !== undefined) setSelectedClipProperty("x", draft.x, false)
+            if (draft.y !== undefined) setSelectedClipProperty("y", draft.y, false)
+        } else if (g.mode === "scale" && draft.scale !== undefined) {
+            setSelectedClipProperty("scale", draft.scale, false)
+        } else if (g.mode === "rotate" && draft.rotation !== undefined) {
+            setSelectedClipProperty("rotation", draft.rotation, false)
+        }
+        transformGesture = null
+        transformPreviewOverride = ({})
+        saveTimelineMedia(mediaFiles)
+        statusMessage = "Трансформация применена"
+    }
+
+    function resetSelectedClipTransform() {
+        if (!selectedTimelineClip) return
+        var defaults = {
+            x: 0, y: 0, scale: 100, rotation: 0,
+            opacity: 100, brightness: 0, contrast: 0, saturation: 0
+        }
+        for (var key in defaults)
+            setSelectedClipProperty(key, defaults[key], false)
+        transformPreviewOverride = ({})
+        saveTimelineMedia(mediaFiles)
+        statusMessage = "Трансформация и цветокоррекция сброшены"
     }
 
     function timelineClipById(id) {
@@ -1694,7 +1809,8 @@ ApplicationWindow {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        color: "#10182d"
+                        id: previewCanvas
+                        color: theme.background
                         border.color: theme.border
                         clip: true
 
@@ -1705,10 +1821,6 @@ ApplicationWindow {
                             visible: true
                             opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
-                                Translate {
-                                    x: root.timelinePreviewOffsetX(root.timelineFootageAt(root.timelinePosition), videoOutput.width)
-                                    y: root.timelinePreviewOffsetY(root.timelineFootageAt(root.timelinePosition), videoOutput.height)
-                                },
                                 Scale {
                                     xScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
                                     yScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
@@ -1719,8 +1831,20 @@ ApplicationWindow {
                                     angle: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "rotation", 0)
                                     origin.x: videoOutput.width / 2
                                     origin.y: videoOutput.height / 2
+                                },
+                                Translate {
+                                    x: root.timelinePreviewOffsetX(root.timelineFootageAt(root.timelinePosition), previewCanvas.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineFootageAt(root.timelinePosition), previewCanvas.height)
                                 }
                             ]
+                            layer.enabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0) !== 0
+                                || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0) !== 0
+                                || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0) !== 0
+                            layer.effect: MultiEffect {
+                                brightness: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0)
+                                contrast: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0)
+                                saturation: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0)
+                            }
                             z: 0
                         }
 
@@ -1770,6 +1894,14 @@ ApplicationWindow {
                                     origin.y: timelineVideoStillPreview.height / 2
                                 }
                             ]
+                            layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
+                            layer.effect: MultiEffect {
+                                brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
+                                contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
+                                saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
+                            }
                             z: 0.5
                         }
 
@@ -1784,10 +1916,6 @@ ApplicationWindow {
                             visible: root.timelineImageActive && root.timelinePreviewActive
                             opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
-                                Translate {
-                                    x: root.timelinePreviewOffsetX(root.timelineVideoAt(root.timelinePosition), timelineImagePreview.width)
-                                    y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), timelineImagePreview.height)
-                                },
                                 Scale {
                                     xScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
                                     yScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
@@ -1798,8 +1926,20 @@ ApplicationWindow {
                                     angle: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0)
                                     origin.x: timelineImagePreview.width / 2
                                     origin.y: timelineImagePreview.height / 2
+                                },
+                                Translate {
+                                    x: root.timelinePreviewOffsetX(root.timelineVideoAt(root.timelinePosition), previewCanvas.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), previewCanvas.height)
                                 }
                             ]
+                            layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
+                            layer.effect: MultiEffect {
+                                brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
+                                contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
+                                saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
+                            }
                             z: 1
                         }
 
@@ -1818,10 +1958,6 @@ ApplicationWindow {
                             font.pixelSize: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "fontSize", 30)
                             opacity: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
-                                Translate {
-                                    x: root.timelinePreviewOffsetX(root.timelineTextAt(root.timelinePosition), timelineTextOverlay.width)
-                                    y: root.timelinePreviewOffsetY(root.timelineTextAt(root.timelinePosition), timelineTextOverlay.height)
-                                },
                                 Scale {
                                     xScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
                                     yScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
@@ -1832,6 +1968,10 @@ ApplicationWindow {
                                     angle: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "rotation", 0)
                                     origin.x: timelineTextOverlay.width / 2
                                     origin.y: timelineTextOverlay.height / 2
+                                },
+                                Translate {
+                                    x: root.timelinePreviewOffsetX(root.timelineTextAt(root.timelinePosition), previewCanvas.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineTextAt(root.timelinePosition), previewCanvas.height)
                                 }
                             ]
                             z: 5
@@ -1839,6 +1979,123 @@ ApplicationWindow {
                                 ? String(root.timelineTextAt(root.timelinePosition).text || "") : ""
                             visible: text !== "" && root.timelinePreviewActive
                         }
+                        Item {
+                            id: transformOverlay
+                            anchors.fill: parent
+                            z: 20
+                            visible: root.previewHasSelectedTransformClip()
+                            property var targetClip: root.selectedTimelineClip
+                            readonly property bool titleTarget: targetClip && targetClip.kind === "text"
+                            readonly property real targetScale: root.timelineClipProperty(targetClip, "scale", 100) / 100
+                            readonly property real baseWidth: titleTarget ? timelineTextOverlay.width : previewCanvas.width
+                            readonly property real baseHeight: titleTarget ? Math.max(32, timelineTextOverlay.height) : previewCanvas.height
+
+                            Item {
+                                id: transformBounds
+                                width: transformOverlay.baseWidth * transformOverlay.targetScale
+                                height: transformOverlay.baseHeight * transformOverlay.targetScale
+                                x: previewCanvas.width / 2
+                                    + root.timelinePreviewOffsetX(transformOverlay.targetClip, previewCanvas.width)
+                                    - width / 2
+                                y: previewCanvas.height / 2
+                                    + root.timelinePreviewOffsetY(transformOverlay.targetClip, previewCanvas.height)
+                                    - height / 2
+                                rotation: root.timelineClipProperty(transformOverlay.targetClip, "rotation", 0)
+                                transformOrigin: Item.Center
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: "transparent"
+                                    border.color: theme.accent
+                                    border.width: 1
+                                    antialiasing: false
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.SizeAllCursor
+                                    onPressed: function(mouse) {
+                                        var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                        root.beginTransformGesture("move", point.x, point.y)
+                                    }
+                                    onPositionChanged: function(mouse) {
+                                        if (!pressed) return
+                                        var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                        root.updateTransformGesture("move", point.x, point.y)
+                                    }
+                                    onReleased: root.commitTransformGesture()
+                                    onCanceled: root.commitTransformGesture()
+                                }
+                                Repeater {
+                                    model: [
+                                        { horizontal: -1, vertical: -1 },
+                                        { horizontal:  1, vertical: -1 },
+                                        { horizontal: -1, vertical:  1 },
+                                        { horizontal:  1, vertical:  1 }
+                                    ]
+                                    delegate: Rectangle {
+                                        id: transformScaleHandle
+                                        required property var modelData
+                                        width: 14
+                                        height: 14
+                                        radius: 2
+                                        x: modelData.horizontal < 0 ? -width / 2
+                                            : (modelData.horizontal > 0 ? parent.width - width / 2
+                                                : parent.width / 2 - width / 2)
+                                        y: modelData.vertical < 0 ? -height / 2
+                                            : (modelData.vertical > 0 ? parent.height - height / 2
+                                                : parent.height / 2 - height / 2)
+                                        color: theme.text
+                                        border.color: theme.accent
+                                        z: 3
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: transformScaleHandle.modelData.horizontal
+                                                === transformScaleHandle.modelData.vertical
+                                                ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+                                            onPressed: function(mouse) {
+                                                var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                                root.beginTransformGesture("scale", point.x, point.y)
+                                            }
+                                            onPositionChanged: function(mouse) {
+                                                if (!pressed) return
+                                                var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                                root.updateTransformGesture("scale", point.x, point.y)
+                                            }
+                                            onReleased: root.commitTransformGesture()
+                                            onCanceled: root.commitTransformGesture()
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 12
+                                    height: 28
+                                    x: parent.width / 2 - width / 2
+                                    y: -34
+                                    color: theme.accent
+                                    border.color: theme.background
+                                    radius: 2
+                                    z: 4
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.CrossCursor
+                                        onPressed: function(mouse) {
+                                            var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                            root.beginTransformGesture("rotate", point.x, point.y)
+                                        }
+                                        onPositionChanged: function(mouse) {
+                                            if (!pressed) return
+                                            var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                            root.updateTransformGesture("rotate", point.x, point.y)
+                                        }
+                                        onReleased: root.commitTransformGesture()
+                                        onCanceled: root.commitTransformGesture()
+                                    }
+                                }
+                            }
+                        }
+
                         Rectangle {
                             anchors.fill: parent
                             visible: !mediaPlayer.hasVideo && !root.timelineImageActive
@@ -1936,6 +2193,20 @@ ApplicationWindow {
                         SpinBox {
                             Layout.fillWidth: true
                             from: -1920; to: 1920; editable: true
+                            palette.text: theme.text
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                            contentItem: TextInput {
+                                text: parent.displayText
+                                color: theme.text
+                                selectionColor: theme.accent
+                                selectedTextColor: theme.background
+                                horizontalAlignment: Qt.AlignHCenter
+                                verticalAlignment: Qt.AlignVCenter
+                                font.family: "monospace"
+                                readOnly: !parent.editable
+                                validator: parent.validator
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            }
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "x", 0))
                             enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("x", value)
@@ -1944,6 +2215,20 @@ ApplicationWindow {
                         SpinBox {
                             Layout.fillWidth: true
                             from: -1080; to: 1080; editable: true
+                            palette.text: theme.text
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                            contentItem: TextInput {
+                                text: parent.displayText
+                                color: theme.text
+                                selectionColor: theme.accent
+                                selectedTextColor: theme.background
+                                horizontalAlignment: Qt.AlignHCenter
+                                verticalAlignment: Qt.AlignVCenter
+                                font.family: "monospace"
+                                readOnly: !parent.editable
+                                validator: parent.validator
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            }
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "y", 0))
                             enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("y", value)
@@ -1952,6 +2237,20 @@ ApplicationWindow {
                         SpinBox {
                             Layout.fillWidth: true
                             from: 10; to: 300; editable: true
+                            palette.text: theme.text
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                            contentItem: TextInput {
+                                text: parent.displayText
+                                color: theme.text
+                                selectionColor: theme.accent
+                                selectedTextColor: theme.background
+                                horizontalAlignment: Qt.AlignHCenter
+                                verticalAlignment: Qt.AlignVCenter
+                                font.family: "monospace"
+                                readOnly: !parent.editable
+                                validator: parent.validator
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            }
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "scale", 100))
                             enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("scale", value)
@@ -1960,9 +2259,41 @@ ApplicationWindow {
                         SpinBox {
                             Layout.fillWidth: true
                             from: -180; to: 180; editable: true
+                            palette.text: theme.text
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                            contentItem: TextInput {
+                                text: parent.displayText
+                                color: theme.text
+                                selectionColor: theme.accent
+                                selectedTextColor: theme.background
+                                horizontalAlignment: Qt.AlignHCenter
+                                verticalAlignment: Qt.AlignVCenter
+                                font.family: "monospace"
+                                readOnly: !parent.editable
+                                validator: parent.validator
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            }
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "rotation", 0))
                             enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("rotation", value)
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Button {
+                            text: "↺ Сброс"
+                            enabled: !!root.selectedTimelineClip
+                            onClicked: root.resetSelectedClipTransform()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Рамку тяни · углы = масштаб · ручка сверху = поворот"
+                            color: theme.muted
+                            wrapMode: Text.WordWrap
+                            font.family: "monospace"
+                            font.pixelSize: 9
                         }
                     }
                     RowLayout {
@@ -1996,6 +2327,11 @@ ApplicationWindow {
                             text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
                                 ? String(root.selectedTimelineClip.text || "") : ""
                             placeholderText: "Текст титра"
+                            color: theme.text
+                            selectionColor: theme.accent
+                            selectedTextColor: theme.background
+                            placeholderTextColor: theme.muted
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                             onEditingFinished: root.setSelectedClipProperty("text", text)
                         }
                         RowLayout {
@@ -2012,6 +2348,11 @@ ApplicationWindow {
                             text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
                                 ? String(root.selectedTimelineClip.textColor || "#ffffff") : "#ffffff"
                             placeholderText: "Цвет, например #ffffff"
+                            color: theme.text
+                            selectionColor: theme.accent
+                            selectedTextColor: theme.background
+                            placeholderTextColor: theme.muted
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                             onEditingFinished: {
                                 if (/^#[0-9a-fA-F]{6}$/.test(text))
                                     root.setSelectedClipProperty("textColor", text)
@@ -2021,14 +2362,84 @@ ApplicationWindow {
                         }
                     }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                    Text { text: "ЦВЕТОКОРРЕКЦИЯ"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                    Text {
+                        text: "ЦВЕТОКОРРЕКЦИЯ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: (12 * root.uiFontScale / 100)
+                    }
+                    Text {
+                        visible: !root.selectedTimelineClip || (root.selectedTimelineClip.kind !== "video"
+                            && root.selectedTimelineClip.kind !== "image")
+                        text: "Выбери видео или изображение на таймлайне"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10
+                        wrapMode: Text.WordWrap
+                    }
                     Repeater {
-                        model: ["Яркость", "Контраст", "Насыщенность"]
+                        model: [
+                            { label: "Яркость", key: "brightness" },
+                            { label: "Контраст", key: "contrast" },
+                            { label: "Насыщенность", key: "saturation" }
+                        ]
                         delegate: ColumnLayout {
-                            required property string modelData
+                            required property var modelData
                             Layout.fillWidth: true
-                            Text { text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
-                            Slider { Layout.fillWidth: true; from: -1; to: 1; value: 0 }
+                            spacing: 2
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: modelData.label
+                                    color: theme.text
+                                    font.family: "monospace"
+                                    font.pixelSize: (11 * root.uiFontScale / 100)
+                                }
+                                Text {
+                                    text: (root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0) > 0 ? "+" : "")
+                                        + Number(root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0)).toFixed(2)
+                                    color: theme.accent
+                                    font.family: "monospace"
+                                    font.pixelSize: 10
+                                }
+                            }
+                            Slider {
+                                id: correctionSlider
+                                Layout.fillWidth: true
+                                from: -1
+                                to: 1
+                                stepSize: 0.05
+                                value: root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0)
+                                enabled: !!root.selectedTimelineClip && (root.selectedTimelineClip.kind === "video"
+                                    || root.selectedTimelineClip.kind === "image")
+                                onMoved: root.setSelectedClipProperty(modelData.key, Math.round(value * 100) / 100)
+                                background: Rectangle {
+                                    x: correctionSlider.leftPadding
+                                    y: correctionSlider.topPadding + correctionSlider.availableHeight / 2 - height / 2
+                                    width: correctionSlider.availableWidth
+                                    height: 4
+                                    radius: 2
+                                    color: theme.background
+                                    border.color: theme.border
+                                    Rectangle {
+                                        width: correctionSlider.visualPosition * parent.width
+                                        height: parent.height
+                                        radius: 2
+                                        color: theme.accent
+                                    }
+                                }
+                                handle: Rectangle {
+                                    x: correctionSlider.leftPadding + correctionSlider.visualPosition
+                                        * (correctionSlider.availableWidth - width)
+                                    y: correctionSlider.topPadding + correctionSlider.availableHeight / 2 - height / 2
+                                    width: 12
+                                    height: 12
+                                    radius: 6
+                                    color: correctionSlider.pressed ? theme.accent : theme.text
+                                    border.color: theme.accent
+                                }
+                            }
                         }
                     }
                     Item { Layout.preferredHeight: 8 }
