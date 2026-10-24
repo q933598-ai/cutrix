@@ -136,7 +136,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
     }
 
     m_outputWidth = qBound(320, width > 0 ? width : 1920, 3840);
-    m_outputHeight = qBound(240, height > 0 ? height : 1080, 2160);
+    m_outputHeight = qBound(240, height > 0 ? height : 1080, 3840);
     if (m_outputWidth % 2 != 0) --m_outputWidth;
     if (m_outputHeight % 2 != 0) --m_outputHeight;
     m_outputFps = qBound(1, fps > 0 ? fps : 30, 120);
