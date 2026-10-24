@@ -1920,13 +1920,25 @@ ApplicationWindow {
                         Item { Layout.fillWidth: true }
                         Text { text: root.projectAspectLabel(); color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                     }
-                    Rectangle {
+                    Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        id: previewCanvas
-                        color: theme.background
-                        border.color: theme.border
+                        Layout.minimumHeight: 220
                         clip: true
+                        Rectangle {
+                            anchors.fill: parent
+                            color: theme.panel
+                        }
+                        Rectangle {
+                            id: previewCanvas
+                            width: Math.max(1, Math.min(parent.width,
+                                parent.height * root.projectFrameWidth() / root.projectFrameHeight()))
+                            height: Math.max(1, Math.min(parent.height,
+                                parent.width * root.projectFrameHeight() / root.projectFrameWidth()))
+                            anchors.centerIn: parent
+                            color: theme.background
+                            border.color: theme.border
+                            clip: true
 
                         VideoOutput {
                             id: videoOutput
@@ -2249,6 +2261,7 @@ ApplicationWindow {
                             }
                         }
 
+                    }
                     }
                     RowLayout {
                         Layout.fillWidth: true
