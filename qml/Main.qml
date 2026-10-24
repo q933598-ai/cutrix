@@ -1303,8 +1303,29 @@ ApplicationWindow {
             ComboBox {
                 id: resolutionBox
                 Layout.fillWidth: true
-                model: ["1920×1080", "2560×1440", "3840×2160", "1280×720", "1080×1920", "720×1280", "1440×2560", "1080×2340"]
-                currentIndex: 0
+                textRole: "label"
+                valueRole: "resolution"
+                property int lastValidIndex: 1
+                model: [
+                    { label: "── ГОРИЗОНТАЛЬНЫЕ ──", resolution: "__landscape_header__", category: true },
+                    { label: "1920×1080 (16:9)", resolution: "1920×1080", category: false },
+                    { label: "2560×1440 (16:9)", resolution: "2560×1440", category: false },
+                    { label: "3840×2160 (16:9)", resolution: "3840×2160", category: false },
+                    { label: "1280×720 (16:9)", resolution: "1280×720", category: false },
+                    { label: "── ВЕРТИКАЛЬНЫЕ / ТЕЛЕФОН ──", resolution: "__portrait_header__", category: true },
+                    { label: "1080×1920 (9:16)", resolution: "1080×1920", category: false },
+                    { label: "720×1280 (9:16)", resolution: "720×1280", category: false },
+                    { label: "1440×2560 (9:16)", resolution: "1440×2560", category: false },
+                    { label: "1080×2340 (9:19.5)", resolution: "1080×2340", category: false }
+                ]
+                currentIndex: 1
+                onActivated: function(index) {
+                    if (model[index].category) {
+                        currentIndex = lastValidIndex
+                        return
+                    }
+                    lastValidIndex = index
+                }
                 palette.text: theme.text
                 palette.window: theme.panel
                 palette.base: theme.panel
@@ -1327,17 +1348,27 @@ ApplicationWindow {
                 }
                 background: Rectangle { color: theme.panel; border.color: theme.border; radius: 0 }
                 delegate: ItemDelegate {
+                    id: resolutionDelegate
+                    required property string label
+                    required property string resolution
+                    required property bool category
                     width: resolutionBox.width
+                    enabled: !category
                     contentItem: Text {
-                        text: modelData
-                        color: highlighted ? theme.accent : theme.text
+                        text: resolutionDelegate.label
+                        color: resolutionDelegate.category ? theme.muted
+                            : (resolutionDelegate.highlighted ? theme.accent : theme.text)
                         font.family: "monospace"
+                        font.bold: resolutionDelegate.category
+                        font.pixelSize: resolutionDelegate.category ? 10 : 12
                         verticalAlignment: Text.AlignVCenter
                     }
                     highlighted: resolutionBox.highlightedIndex === index
                     background: Rectangle {
-                        color: parent.highlighted ? theme.panelAlt : theme.panel
-                        border.color: parent.highlighted ? theme.accent : theme.border
+                        color: resolutionDelegate.category ? theme.background
+                            : (resolutionDelegate.highlighted ? theme.panelAlt : theme.panel)
+                        border.color: resolutionDelegate.highlighted && !resolutionDelegate.category
+                            ? theme.accent : theme.border
                     }
                 }
                 popup: Popup {
@@ -1424,7 +1455,7 @@ ApplicationWindow {
                     onClicked: {
                         if (projectNameField.text.trim() === "") { root.statusMessage = "Введи название проекта"; return }
                         root.pendingProjectName = projectNameField.text.trim()
-                        root.pendingResolution = resolutionBox.currentText
+                        root.pendingResolution = resolutionBox.currentValue
                         root.pendingFps = parseInt(fpsBox.currentText)
                         var path = projectStore.chooseProjectSavePath(root.pendingProjectName)
                         if (path === "") return
