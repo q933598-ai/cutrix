@@ -326,7 +326,7 @@ void MediaTools::parseTranscriptionResult()
     const QString contents = QString::fromUtf8(file.readAll());
     file.close();
 
-    const QRegularExpression blockSeparator(QStringLiteral("\\\\r?\\\\n\\\\s*\\\\r?\\\\n"));
+    const QRegularExpression blockSeparator(QStringLiteral("\\r?\\n\\s*\\r?\\n"));
     const QRegularExpression timestamp(
         QStringLiteral(R"((\d{2,}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2,}):(\d{2}):(\d{2})[,.](\d{3}))"));
     const QRegularExpression tags(QStringLiteral("<[^>]*>"));
