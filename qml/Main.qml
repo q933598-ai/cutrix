@@ -20,6 +20,7 @@ ApplicationWindow {
     property string selectedTimelineClipId: ""
     readonly property var selectedTimelineClip: timelineClipById(selectedTimelineClipId)
     property string mediaSearch: ""
+    property string exportErrorDetail: ""
     property var mediaFiles: []
     property bool isPlaying: false
     property string playbackError: ""
@@ -102,6 +103,24 @@ ApplicationWindow {
             return fallback
         var value = Number(item[key])
         return isFinite(value) ? value : fallback
+    }
+
+    function projectFrameWidth() {
+        var parts = String(currentProjectResolution || "1920×1080").replace("×", "x").split("x")
+        return Math.max(1, parseInt(parts[0]) || 1920)
+    }
+
+    function projectFrameHeight() {
+        var parts = String(currentProjectResolution || "1920×1080").replace("×", "x").split("x")
+        return Math.max(1, parseInt(parts[1]) || 1080)
+    }
+
+    function timelinePreviewOffsetX(item, previewWidth) {
+        return timelineClipProperty(item, "x", 0) * previewWidth / projectFrameWidth()
+    }
+
+    function timelinePreviewOffsetY(item, previewHeight) {
+        return timelineClipProperty(item, "y", 0) * previewHeight / projectFrameHeight()
     }
 
     function timelineTextAt(seconds) {
@@ -294,6 +313,7 @@ ApplicationWindow {
     }
 
     function selectMedia(name) {
+        selectedTimelineClipId = ""
         timelinePlaybackTimer.stop()
         mediaPlayer.pause()
         timelinePreviewActive = false
@@ -478,7 +498,7 @@ ApplicationWindow {
             for (var j = 0; j < updated.length; ++j) {
                 if (normalizedMediaUrl(updated[j].url) !== normalizedUrl) continue
                 if (anyMatchIndex < 0) anyMatchIndex = j
-                if (Number(updated[j].track) < 0) { sourceIndex = j; break }
+                if (updated[j].track === undefined || Number(updated[j].track) < 0) { sourceIndex = j; break }
             }
             if (sourceIndex >= 0) {
                 duplicates += 1
@@ -507,6 +527,7 @@ ApplicationWindow {
             if (firstImportedName === "") firstImportedName = source.name
         }
         root.mediaFiles = updated
+        root.selectedTimelineClipId = ""
         if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
         root.mediaSearch = ""
         if (firstImportedName !== "") root.selectedMedia = firstImportedName
@@ -944,8 +965,12 @@ ApplicationWindow {
                 kind: "text",
                 track: 4,
                 start: start,
-                duration: duration
+                duration: duration,
+                x: 0, y: 0, scale: 100,
+                rotation: 0, opacity: 100, volume: 100,
+                fontSize: 30, textColor: "#ffffff"
             })
+            root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
             root.mediaFiles = updated
             root.saveTimelineMedia(updated)
             root.timelinePosition = start
@@ -1192,8 +1217,32 @@ ApplicationWindow {
                 : "Экспорт готов · CPU (libx264)"
         }
         function onExportFailed(message) {
-            root.statusMessage = "Ошибка экспорта: " + message
+            root.exportErrorDetail = String(message || "Неизвестная ошибка FFmpeg")
+            root.statusMessage = "Экспорт не удался — подробности в окне ошибки"
+            exportErrorDialog.open()
         }
+    }
+
+    Dialog {
+        id: exportErrorDialog
+        title: "Ошибка экспорта MP4"
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(720, root.width - 48)
+        height: Math.min(420, root.height - 48)
+        standardButtons: Dialog.Ok
+        contentItem: ScrollView {
+            clip: true
+            TextArea {
+                text: root.exportErrorDetail
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                color: theme.text
+                background: Rectangle { color: theme.background; border.color: theme.border }
+            }
+        }
+        background: Rectangle { color: theme.panel; border.color: theme.accent; radius: 0 }
     }
 
     Dialog {
@@ -1577,8 +1626,8 @@ ApplicationWindow {
                             opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Translate {
-                                    x: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "x", 0)
-                                    y: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "y", 0)
+                                    x: root.timelinePreviewOffsetX(root.timelineFootageAt(root.timelinePosition), videoOutput.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineFootageAt(root.timelinePosition), videoOutput.height)
                                 },
                                 Scale {
                                     xScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
@@ -1607,8 +1656,8 @@ ApplicationWindow {
                             opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Translate {
-                                    x: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "x", 0)
-                                    y: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "y", 0)
+                                    x: root.timelinePreviewOffsetX(root.timelineVideoAt(root.timelinePosition), timelineImagePreview.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), timelineImagePreview.height)
                                 },
                                 Scale {
                                     xScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
@@ -1641,8 +1690,8 @@ ApplicationWindow {
                             opacity: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Translate {
-                                    x: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "x", 0)
-                                    y: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "y", 0)
+                                    x: root.timelinePreviewOffsetX(root.timelineTextAt(root.timelinePosition), timelineTextOverlay.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineTextAt(root.timelinePosition), timelineTextOverlay.height)
                                 },
                                 Scale {
                                     xScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
