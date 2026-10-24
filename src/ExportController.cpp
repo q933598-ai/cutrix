@@ -174,6 +174,10 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.x = boundedItemValue(item, QStringLiteral("x"), 0.0, -7680.0, 7680.0);
         clip.y = boundedItemValue(item, QStringLiteral("y"), 0.0, -4320.0, 4320.0);
         clip.scale = boundedItemValue(item, QStringLiteral("scale"), 100.0, 10.0, 300.0);
+        clip.zoomMode = item.value(QStringLiteral("zoomMode"), QStringLiteral("none")).toString();
+        if (clip.zoomMode != QStringLiteral("in") && clip.zoomMode != QStringLiteral("out"))
+            clip.zoomMode = QStringLiteral("none");
+        clip.zoomAmount = boundedItemValue(item, QStringLiteral("zoomAmount"), 150.0, 110.0, 250.0);
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
         clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
@@ -284,10 +288,22 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const int scaledHeight = qMax(2, qRound(m_outputHeight * clip.scale / 100.0) & ~1);
         const QString label = QStringLiteral("visual%1").arg(visualSerial);
         const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
+        QString zoomFilter;
+        if (clip.zoomMode == QStringLiteral("in") || clip.zoomMode == QStringLiteral("out")) {
+            const QString amount = number(clip.zoomAmount / 100.0);
+            const QString progress = QStringLiteral("min(on/(%1*%2),1)")
+                                         .arg(number(clip.duration), QString::number(m_outputFps));
+            const QString zoomExpression = clip.zoomMode == QStringLiteral("in")
+                ? QStringLiteral("1+(%1-1)*%2").arg(amount, progress)
+                : QStringLiteral("%1-(%1-1)*%2").arg(amount, progress);
+            zoomFilter = QStringLiteral("fps=%1,zoompan=z=\\'%2\\':x=\\'iw/2-(iw/zoom/2)\\':"
+                                        "y=\\'ih/2-(ih/zoom/2)\\':d=1:s=%3x%4:fps=%1,")
+                             .arg(m_outputFps).arg(zoomExpression).arg(scaledWidth).arg(scaledHeight);
+        }
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
-                                 "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
+                                 "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,%12"
                                  "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,"
                                  "colorchannelmixer=aa=%8,setsar=1,"
                                  "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,"
@@ -298,7 +314,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                        .arg(number(1.0 + clip.saturation))
                        .arg(scaledWidth).arg(scaledHeight).arg(angle)
                        .arg(number(clip.opacity / 100.0))
-                       .arg(number(clip.duration)).arg(number(clip.start)).arg(label);
+                       .arg(number(clip.duration)).arg(number(clip.start)).arg(label)
+                       .arg(zoomFilter);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
         filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
