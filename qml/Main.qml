@@ -1747,6 +1747,31 @@ ApplicationWindow {
     }
 
     FileDialog {
+        id: whisperModelDialog
+        title: "Выбрать локальную модель Whisper"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["Модель Whisper (*.bin)", "Все файлы (*)"]
+        onAccepted: {
+            root.selectedWhisperModel = selectedFile.toString()
+            root.startSubtitleGeneration()
+        }
+    }
+
+    Connections {
+        target: mediaTools
+        function onTranscriptionRunningChanged() {
+            if (mediaTools.transcriptionRunning)
+                root.statusMessage = "Распознаю речь локально…"
+        }
+        function onTranscriptionFinished(segments) {
+            root.insertGeneratedSubtitles(segments)
+        }
+        function onTranscriptionFailed(message) {
+            root.statusMessage = String(message || "Не удалось распознать речь")
+        }
+    }
+
+    FileDialog {
         id: exportDialog
         title: "Экспортировать видео"
         fileMode: FileDialog.SaveFile
@@ -1978,8 +2003,8 @@ ApplicationWindow {
                             required property var modelData
                             width: parent.width
                             height: 39
-                            color: modelData[1] === "Медиа" || (modelData[1] === "Настройки" && root.settingsOpen) ? theme.panelAlt : "transparent"
-                            border.color: modelData[1] === "Медиа" || (modelData[1] === "Настройки" && root.settingsOpen) ? theme.border : "transparent"
+                            color: modelData[1] === root.activeSidebarSection || (modelData[1] === "Настройки" && root.settingsOpen) ? theme.panelAlt : "transparent"
+                            border.color: modelData[1] === root.activeSidebarSection || (modelData[1] === "Настройки" && root.settingsOpen) ? theme.border : "transparent"
                             Row {
                                 anchors.fill: parent
                                 anchors.leftMargin: 7
@@ -1992,9 +2017,17 @@ ApplicationWindow {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (modelData[1] === "Настройки") settingsDialog.open()
-                                    else if (modelData[1] === "Текст") textClipDialog.open()
-                                    else if (modelData[1] === "Аудио") importDialog.open()
-                                    else root.statusMessage = modelData[1] + " — раздел пока в разработке"
+                                    else if (modelData[1] === "Медиа" || modelData[1] === "Эффекты") {
+                                        root.activeSidebarSection = modelData[1]
+                                    } else if (modelData[1] === "Текст") {
+                                        root.activeSidebarSection = "Медиа"
+                                        textClipDialog.open()
+                                    } else if (modelData[1] === "Аудио") {
+                                        root.activeSidebarSection = "Медиа"
+                                        importDialog.open()
+                                    } else {
+                                        root.statusMessage = modelData[1] + " — раздел пока в разработке"
+                                    }
                                 }
                             }
                         }
@@ -2014,6 +2047,7 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: 9
                     spacing: 8
+                    visible: root.activeSidebarSection !== "Эффекты"
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
                         id: mediaSearchField
@@ -2180,6 +2214,132 @@ ApplicationWindow {
                     }
                     Item { Layout.fillHeight: true }
                     Text { text: "Миниатюры видео создаются через FFmpeg; для аудио показана карточка файла."; color: theme.muted; font.family: "monospace"; font.pixelSize: (11 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
+                }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 9
+                    spacing: 10
+                    visible: root.activeSidebarSection === "Эффекты"
+                    Text {
+                        text: "ЭФФЕКТЫ КЛИПА"
+                        color: theme.accent
+                        font.family: "monospace"
+                        font.bold: true
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.selectedTimelineClip ? String(root.selectedTimelineClip.name || "Клип выбран")
+                            : "Выбери клип на таймлайне, затем примени эффект."
+                        color: theme.text
+                        font.family: "monospace"
+                        wrapMode: Text.WordWrap
+                    }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                    Text {
+                        text: "МАСШТАБ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "⌕ Приближение · 150%"
+                        enabled: root.selectedClipCanZoom
+                        onClicked: root.applyStaticZoom(150)
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "⌕ Отдаление · 80%"
+                        enabled: root.selectedClipCanZoom
+                        onClicked: root.applyStaticZoom(80)
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "↺ Обычный масштаб · 100%"
+                        enabled: root.selectedClipCanZoom
+                        onClicked: root.applyStaticZoom(100)
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                    }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                    Text {
+                        text: "СКОРОСТЬ И НАПРАВЛЕНИЕ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: root.selectedTimelineClip && root.selectedTimelineClip.reverse
+                            ? "↶ Отключить реверс" : "↶ Реверс видео + звука"
+                        enabled: root.selectedClipCanReverse
+                        onClicked: root.toggleSelectedClipReverse()
+                        palette.buttonText: theme.text
+                        background: Rectangle {
+                            color: root.selectedTimelineClip && root.selectedTimelineClip.reverse
+                                ? theme.accent2 : theme.panelAlt
+                            border.color: theme.border
+                            radius: 2
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Реверс воспроизводит выбранный видеоклип назад. В предпросмотре звук временно приглушается; экспорт разворачивает видео и аудио."
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 9 * root.uiFontScale / 100
+                        wrapMode: Text.WordWrap
+                    }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                    Text {
+                        text: "АВТОСУБТИТРЫ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: mediaTools.transcriptionRunning ? "Распознавание…" : "♫ Создать субтитры из речи"
+                        enabled: root.selectedClipCanTranscribe && !mediaTools.transcriptionRunning
+                        onClicked: root.requestAutoSubtitles()
+                        palette.buttonText: theme.background
+                        background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 2 }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.selectedWhisperModel === ""
+                            ? "Модель Whisper не выбрана."
+                            : "Модель: " + root.fileNameFromUrl(root.selectedWhisperModel)
+                        color: theme.text
+                        font.family: "monospace"
+                        font.pixelSize: 9 * root.uiFontScale / 100
+                        wrapMode: Text.WordWrap
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Выбрать модель Whisper (.bin)"
+                        enabled: !mediaTools.transcriptionRunning
+                        onClicked: {
+                            root.pendingSubtitleClipId = String(root.selectedTimelineClipId || "")
+                            whisperModelDialog.open()
+                        }
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Работает локально через whisper-cli + FFmpeg. Модель Whisper нужно скачать отдельно один раз."
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 9 * root.uiFontScale / 100
+                        wrapMode: Text.WordWrap
+                    }
+                    Item { Layout.fillHeight: true }
                 }
             }
 
@@ -2690,84 +2850,6 @@ ApplicationWindow {
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "rotation", 0))
                             enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("rotation", value)
-                        }
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 5
-                        Text {
-                            text: "АНИМАЦИЯ ПРИБЛИЖЕНИЯ"
-                            color: theme.muted
-                            font.family: "monospace"
-                            font.pixelSize: 10 * root.uiFontScale / 100
-                        }
-                        ComboBox {
-                            id: zoomModeBox
-                            Layout.fillWidth: true
-                            model: ["Без эффекта", "Приближение", "Отдаление"]
-                            currentIndex: !root.selectedTimelineClip ? 0
-                                : root.selectedTimelineClip.zoomMode === "in" ? 1
-                                : root.selectedTimelineClip.zoomMode === "out" ? 2 : 0
-                            enabled: root.selectedClipCanZoom
-                            onActivated: function(index) {
-                                if (!root.selectedClipCanZoom) return
-                                root.setSelectedClipProperty("zoomMode", index === 1 ? "in"
-                                    : index === 2 ? "out" : "none")
-                            }
-                            palette.text: theme.text
-                            background: Rectangle {
-                                color: theme.background
-                                border.color: theme.border
-                                radius: 2
-                            }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text {
-                                text: "Сила %"
-                                color: theme.text
-                                font.family: "monospace"
-                                font.pixelSize: 11 * root.uiFontScale / 100
-                            }
-                            SpinBox {
-                                Layout.fillWidth: true
-                                from: 110
-                                to: 250
-                                stepSize: 5
-                                editable: true
-                                value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "zoomAmount", 150))
-                                enabled: root.selectedClipCanZoom
-                                    && !!root.selectedTimelineClip
-                                    && (root.selectedTimelineClip.zoomMode === "in"
-                                        || root.selectedTimelineClip.zoomMode === "out")
-                                onValueModified: root.setSelectedClipProperty("zoomAmount", value)
-                                palette.text: theme.text
-                                background: Rectangle {
-                                    color: theme.background
-                                    border.color: theme.border
-                                    radius: 2
-                                }
-                                contentItem: TextInput {
-                                    text: parent.displayText
-                                    color: theme.text
-                                    selectionColor: theme.accent
-                                    selectedTextColor: theme.background
-                                    horizontalAlignment: Qt.AlignHCenter
-                                    verticalAlignment: Qt.AlignVCenter
-                                    font.family: "monospace"
-                                    readOnly: !parent.editable
-                                    validator: parent.validator
-                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
-                                }
-                            }
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Плавно меняет масштаб от начала до конца клипа."
-                            color: theme.muted
-                            wrapMode: Text.WordWrap
-                            font.family: "monospace"
-                            font.pixelSize: 9 * root.uiFontScale / 100
                         }
                     }
                     RowLayout {
