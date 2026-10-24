@@ -306,10 +306,10 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
-                                 "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,%12"
+                                 "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
                                  "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,"
                                  "colorchannelmixer=aa=%8,setsar=1,"
-                                 "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,"
+                                 "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,%12"
                                  "setpts=PTS-STARTPTS+%10/TB[%11]")
                        .arg(clip.inputIndex)
                        .arg(number(clip.brightness))
