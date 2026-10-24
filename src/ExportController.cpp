@@ -91,7 +91,7 @@ QStringList encoderArguments(bool useGpu)
     if (useGpu) {
         return {
             QStringLiteral("-c:v"), QStringLiteral("h264_nvenc"),
-            QStringLiteral("-preset"), QStringLiteral("p4"),
+            QStringLiteral("-preset"), QStringLiteral("p2"),
             QStringLiteral("-rc"), QStringLiteral("vbr"),
             QStringLiteral("-cq"), QStringLiteral("23"),
             QStringLiteral("-b:v"), QStringLiteral("0")
@@ -176,6 +176,9 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
         clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
+        clip.brightness = boundedItemValue(item, QStringLiteral("brightness"), 0.0, -1.0, 1.0);
+        clip.contrast = boundedItemValue(item, QStringLiteral("contrast"), 0.0, -1.0, 1.0);
+        clip.saturation = boundedItemValue(item, QStringLiteral("saturation"), 0.0, -1.0, 1.0);
         clip.fontSize = boundedItemValue(item, QStringLiteral("fontSize"), 42.0, 8.0, 180.0);
         clip.textColor = ffmpegFontColor(item.value(QStringLiteral("textColor"), QStringLiteral("#ffffff")).toString());
         if (!std::isfinite(clip.start) || !std::isfinite(clip.duration) || clip.duration <= 0.0)
@@ -228,8 +231,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         QStringLiteral("-y"),
         QStringLiteral("-loglevel"), QStringLiteral("error"),
         QStringLiteral("-nostats"),
-        QStringLiteral("-progress"), QStringLiteral("pipe:1"),
-        QStringLiteral("-filter_complex_threads"), QStringLiteral("2")
+        QStringLiteral("-progress"), QStringLiteral("pipe:1")
     };
 
     for (const Clip &clip : inputClips) {
@@ -275,15 +277,20 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const int scaledHeight = qMax(2, qRound(m_outputHeight * clip.scale / 100.0) & ~1);
         const QString label = QStringLiteral("visual%1").arg(visualSerial);
         const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
-        filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,fps=%2,format=rgba,"
-                                 "scale=%3:%4:force_original_aspect_ratio=decrease,"
-                                 "pad=%3:%4:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                                 "rotate=%5:ow=rotw(iw):oh=roth(ih):c=black@0,"
-                                 "colorchannelmixer=aa=%6,setsar=1,"
-                                 "tpad=stop_mode=clone:stop_duration=%7,trim=duration=%7,"
-                                 "setpts=PTS-STARTPTS+%8/TB[%9]")
-                       .arg(clip.inputIndex).arg(m_outputFps).arg(scaledWidth).arg(scaledHeight)
-                       .arg(angle).arg(number(clip.opacity / 100.0))
+        filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
+                                 "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
+                                 "scale=%5:%6:force_original_aspect_ratio=decrease,"
+                                 "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
+                                 "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,"
+                                 "colorchannelmixer=aa=%8,setsar=1,"
+                                 "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,"
+                                 "setpts=PTS-STARTPTS+%10/TB[%11]")
+                       .arg(clip.inputIndex)
+                       .arg(number(clip.brightness))
+                       .arg(number(1.0 + clip.contrast))
+                       .arg(number(1.0 + clip.saturation))
+                       .arg(scaledWidth).arg(scaledHeight).arg(angle)
+                       .arg(number(clip.opacity / 100.0))
                        .arg(number(clip.duration)).arg(number(clip.start)).arg(label);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
