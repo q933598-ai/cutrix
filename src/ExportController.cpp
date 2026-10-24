@@ -61,11 +61,29 @@ bool hasAudioStream(const QString &path)
 
 double clipDuration(const QVariantMap &item)
 {
-    const double value = item.value(QStringLiteral("duration")).toDouble();
-    if (std::isfinite(value) && value > 0.0)
+    bool ok = false;
+    const double value = item.value(QStringLiteral("duration")).toDouble(&ok);
+    if (ok && std::isfinite(value) && value > 0.0)
         return value;
     const QString kind = item.value(QStringLiteral("kind")).toString();
     return (kind == QStringLiteral("image") || kind == QStringLiteral("text")) ? 5.0 : 36.0;
+}
+
+double boundedItemValue(const QVariantMap &item, const QString &key,
+                        double fallback, double minimum, double maximum)
+{
+    bool ok = false;
+    const double value = item.value(key).toDouble(&ok);
+    if (!ok || !std::isfinite(value))
+        return fallback;
+    return qBound(minimum, value, maximum);
+}
+
+QString ffmpegFontColor(QString value)
+{
+    static const QRegularExpression valid(QStringLiteral("^#([0-9a-fA-F]{6})$"));
+    const auto match = valid.match(value);
+    return match.hasMatch() ? QStringLiteral("0x") + match.captured(1) : QStringLiteral("0xffffff");
 }
 
 QStringList encoderArguments(bool useGpu)
@@ -152,6 +170,14 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.track = track;
         clip.start = qMax(0.0, item.value(QStringLiteral("start")).toDouble());
         clip.duration = clipDuration(item);
+        clip.x = boundedItemValue(item, QStringLiteral("x"), 0.0, -7680.0, 7680.0);
+        clip.y = boundedItemValue(item, QStringLiteral("y"), 0.0, -4320.0, 4320.0);
+        clip.scale = boundedItemValue(item, QStringLiteral("scale"), 100.0, 10.0, 300.0);
+        clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
+        clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
+        clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
+        clip.fontSize = boundedItemValue(item, QStringLiteral("fontSize"), 42.0, 8.0, 180.0);
+        clip.textColor = ffmpegFontColor(item.value(QStringLiteral("textColor"), QStringLiteral("#ffffff")).toString());
         if (!std::isfinite(clip.start) || !std::isfinite(clip.duration) || clip.duration <= 0.0)
             continue;
 
@@ -163,7 +189,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
 
         const bool visual = (clip.kind == QStringLiteral("video") || clip.kind == QStringLiteral("image"))
             && (track == 0 || track == 1);
-        const bool audio = clip.kind == QStringLiteral("audio") && (track == 2 || track == 3);
+        const bool audio = (clip.kind == QStringLiteral("audio") || clip.kind == QStringLiteral("video"))
+            && (track == 2 || track == 3);
         if (!visual && !audio)
             continue;
 
@@ -244,19 +271,26 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
     QString currentVideo = QStringLiteral("base0");
     int visualSerial = 0;
     for (const Clip &clip : visuals) {
+        const int scaledWidth = qMax(2, qRound(m_outputWidth * clip.scale / 100.0) & ~1);
+        const int scaledHeight = qMax(2, qRound(m_outputHeight * clip.scale / 100.0) & ~1);
         const QString label = QStringLiteral("visual%1").arg(visualSerial);
-        filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,fps=%2,scale=%3:%4:force_original_aspect_ratio=decrease,"
-                                 "pad=%3:%4:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
-                                 "tpad=stop_mode=clone:stop_duration=%5,trim=duration=%5,"
-                                 "setpts=PTS-STARTPTS+%6/TB[%7]")
-                       .arg(clip.inputIndex).arg(m_outputFps).arg(m_outputWidth).arg(m_outputHeight)
+        const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
+        filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,fps=%2,format=rgba,"
+                                 "scale=%3:%4:force_original_aspect_ratio=decrease,"
+                                 "pad=%3:%4:(ow-iw)/2:(oh-ih)/2:color=black@0,"
+                                 "rotate=%5:ow=rotw(iw):oh=roth(ih):c=black@0,"
+                                 "colorchannelmixer=aa=%6,setsar=1,"
+                                 "tpad=stop_mode=clone:stop_duration=%7,trim=duration=%7,"
+                                 "setpts=PTS-STARTPTS+%8/TB[%9]")
+                       .arg(clip.inputIndex).arg(m_outputFps).arg(scaledWidth).arg(scaledHeight)
+                       .arg(angle).arg(number(clip.opacity / 100.0))
                        .arg(number(clip.duration)).arg(number(clip.start)).arg(label);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
-        filters << QStringLiteral("[%1][%2]overlay=x=0:y=0:eof_action=pass:shortest=0:repeatlast=0:"
-                                 "enable='between(t,%3,%4)'[%5]")
-                       .arg(currentVideo, label, number(clip.start),
-                            number(clip.start + clip.duration), merged);
+        filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
+                                 "eof_action=pass:shortest=0:repeatlast=0:enable='between(t,%5,%6)'[%7]")
+                       .arg(currentVideo, label, number(clip.x), number(clip.y),
+                            number(clip.start), number(clip.start + clip.duration), merged);
         currentVideo = merged;
         ++visualSerial;
     }
@@ -276,12 +310,23 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         textFile.write(clip.text.toUtf8());
         textFile.close();
 
+        const int scaledFontSize = qMax(8, qRound(clip.fontSize * clip.scale / 100.0));
+        const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
         const QString label = QStringLiteral("title%1").arg(titleSerial);
-        filters << QStringLiteral("[%1]drawtext=textfile='%2':fontcolor=white:fontsize=42:borderw=3:"
-                                 "bordercolor=black:x=(w-text_w)/2:y=h*0.78:"
-                                 "enable='between(t,%3,%4)'[%5]")
-                       .arg(currentVideo, escapeFilterPath(textPath), number(clip.start),
-                            number(clip.start + clip.duration), label);
+        const QString titleSource = QStringLiteral("titlesrc%1").arg(titleSerial);
+        filters << QStringLiteral("color=c=black@0:s=%1x%2:r=%3:d=%4,format=rgba,"
+                                 "drawtext=textfile='%5':fontcolor=%6:fontsize=%7:borderw=3:"
+                                 "bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:alpha=%8,"
+                                 "rotate=%9:ow=rotw(iw):oh=roth(ih):c=black@0,"
+                                 "setpts=PTS-STARTPTS+%10/TB[%11]")
+                       .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
+                       .arg(number(clip.duration)).arg(escapeFilterPath(textPath))
+                       .arg(clip.textColor).arg(scaledFontSize).arg(number(clip.opacity / 100.0))
+                       .arg(angle).arg(number(clip.start)).arg(titleSource);
+        filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
+                                 "eof_action=pass:shortest=0:repeatlast=0:enable='between(t,%5,%6)'[%7]")
+                       .arg(currentVideo, titleSource, number(clip.x), number(clip.y),
+                            number(clip.start), number(clip.start + clip.duration), label);
         currentVideo = label;
         ++titleSerial;
     }
@@ -295,8 +340,9 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const QString label = QStringLiteral("audio%1").arg(audioSerial);
         const int delay = qMax(0, qRound(clip.start * 1000.0));
         filters << QStringLiteral("[%1:a:0]atrim=duration=%2,asetpts=PTS-STARTPTS,aresample=48000,"
-                                 "aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=%3|%3[%4]")
-                       .arg(clip.inputIndex).arg(number(clip.duration)).arg(delay).arg(label);
+                                 "volume=%3,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=%4|%4[%5]")
+                       .arg(clip.inputIndex).arg(number(clip.duration))
+                       .arg(number(clip.volume / 100.0)).arg(delay).arg(label);
         audioLabels << QStringLiteral("[%1]").arg(label);
         ++audioSerial;
     }
