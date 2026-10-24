@@ -458,6 +458,26 @@ ApplicationWindow {
         currentProjectPath = path
         currentProjectName = name || path.split("/").pop().replace(/\.cutrix$/, "")
         var savedMedia = projectStore.projectMedia(path)
+
+        // Repair legacy projects that stored hasAudio=false when ffprobe output
+        // was parsed incorrectly. Probe each affected source only once.
+        var probedAudioByUrl = ({})
+        savedMedia = savedMedia.map(function(rawItem) {
+            var item = Object.assign({}, rawItem)
+            if (item.kind !== "video" || item.hasAudio !== false)
+                return item
+            var key = normalizedMediaUrl(item.url)
+            if (key === "")
+                return item
+            if (probedAudioByUrl[key] === undefined)
+                probedAudioByUrl[key] = mediaTools.inspect(item.url)
+            var metadata = probedAudioByUrl[key]
+            if (metadata.hasAudio !== undefined)
+                item.hasAudio = Boolean(metadata.hasAudio)
+            else
+                delete item.hasAudio
+            return item
+        })
         mediaFiles = normalizeTimelineMedia(savedMedia)
         if (JSON.stringify(mediaFiles) !== JSON.stringify(savedMedia))
             projectStore.saveProjectMedia(path, mediaFiles)
@@ -526,7 +546,14 @@ ApplicationWindow {
             source.name = fileNameFromUrl(url)
             source.kind = metadata.kind && metadata.kind !== "unknown"
                 ? metadata.kind : (source.kind && source.kind !== "unknown" ? source.kind : root.mediaKindFromUrl(url))
-            source.hasAudio = metadata.hasAudio !== undefined ? Boolean(metadata.hasAudio) : (source.kind === "audio")
+            if (metadata.hasAudio !== undefined) {
+                source.hasAudio = Boolean(metadata.hasAudio)
+            } else if (source.kind === "audio") {
+                source.hasAudio = true
+            } else {
+                // Missing ffprobe data means "unknown", not "silent".
+                delete source.hasAudio
+            }
             source.duration = Number(metadata.duration) > 0 ? Number(metadata.duration) : Number(source.duration || 0)
             source.missing = !metadata.exists && anyMatchIndex < 0
             source.track = -1
@@ -1695,6 +1722,55 @@ ApplicationWindow {
                                 }
                             ]
                             z: 0
+                        }
+
+                        // Qt Multimedia may not expose a paused frame until playback
+                        // starts. Show an FFmpeg thumbnail while paused/loading so a
+                        // freshly placed clip is never represented by an empty canvas.
+                        Image {
+                            id: timelineVideoStillPreview
+                            anchors.fill: parent
+                            source: {
+                                var revision = mediaTools.thumbnailRevision
+                                var clip = root.timelineVideoAt(root.timelinePosition)
+                                if (!root.timelinePreviewActive || !clip || clip.kind !== "video")
+                                    return ""
+                                if (timelinePlaybackTimer.running
+                                        && mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                                    return ""
+                                var elapsed = Math.max(0, Number(root.timelinePosition)
+                                    - Number(clip.start || 0))
+                                elapsed = Math.floor(elapsed * 2) / 2
+                                return mediaTools.thumbnailAt(clip.url, elapsed)
+                            }
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            cache: true
+                            visible: root.timelinePreviewActive
+                                && !root.timelineImageActive
+                                && root.timelineVideoAt(root.timelinePosition) !== null
+                                && root.timelineVideoAt(root.timelinePosition).kind === "video"
+                                && (!timelinePlaybackTimer.running
+                                    || mediaPlayer.playbackState !== MediaPlayer.PlayingState)
+                            opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
+                            transform: [
+                                Translate {
+                                    x: root.timelinePreviewOffsetX(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.height)
+                                },
+                                Scale {
+                                    xScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
+                                    yScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
+                                    origin.x: timelineVideoStillPreview.width / 2
+                                    origin.y: timelineVideoStillPreview.height / 2
+                                },
+                                Rotation {
+                                    angle: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0)
+                                    origin.x: timelineVideoStillPreview.width / 2
+                                    origin.y: timelineVideoStillPreview.height / 2
+                                }
+                            ]
+                            z: 0.5
                         }
 
                         Image {
