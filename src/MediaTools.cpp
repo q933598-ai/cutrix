@@ -64,12 +64,16 @@ QVariantMap MediaTools::inspect(const QString &url) const
         "-v", "error", "-select_streams", "v:0",
         "-show_entries", "stream=codec_type", "-of", "csv=p=0", path
     });
+    const QString audioStreams = runTool("ffprobe", {
+        "-v", "error", "-select_streams", "a:0",
+        "-show_entries", "stream=codec_type", "-of", "csv=p=0", path
+    });
     const QString suffix = info.suffix().toLower();
     if (QStringList{"png","jpg","jpeg","webp","bmp","gif","tif","tiff"}.contains(suffix))
         result.insert("kind", "image");
     else if (!streams.isEmpty())
         result.insert("kind", "video");
-    else if (ok)
+    else if (!audioStreams.isEmpty() || ok)
         result.insert("kind", "audio");
     return result;
 }
