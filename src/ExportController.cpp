@@ -296,8 +296,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             const QString zoomExpression = clip.zoomMode == QStringLiteral("in")
                 ? QStringLiteral("1+(%1-1)*%2").arg(amount, progress)
                 : QStringLiteral("%1-(%1-1)*%2").arg(amount, progress);
-            zoomFilter = QStringLiteral("fps=%1,zoompan=z=\\'%2\\':x=\\'iw/2-(iw/zoom/2)\\':"
-                                        "y=\\'ih/2-(ih/zoom/2)\\':d=1:s=%3x%4:fps=%1,")
+            zoomFilter = QStringLiteral("fps=%1,zoompan=z='%2':x='iw/2-(iw/zoom/2)':"
+                                        "y='ih/2-(ih/zoom/2)':d=1:s=%3x%4:fps=%1,")
                              .arg(m_outputFps).arg(zoomExpression).arg(scaledWidth).arg(scaledHeight);
         }
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
