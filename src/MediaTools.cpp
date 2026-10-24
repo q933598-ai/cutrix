@@ -111,7 +111,8 @@ QString MediaTools::thumbnailAt(const QString &url, double seconds)
     const QString cacheDir = cacheRoot + "/media-thumbnails";
     if (!QDir().mkpath(cacheDir)) return {};
     const QByteArray keyBytes = QCryptographicHash::hash(
-        (info.absoluteFilePath() + "|" + QString::number(info.lastModified().toSecsSinceEpoch())
+        (QStringLiteral("cutrix-preview-v2|") + info.absoluteFilePath()
+         + "|" + QString::number(info.lastModified().toSecsSinceEpoch())
          + "|" + QString::number(safeSeconds, 'f', 2))
             .toUtf8(), QCryptographicHash::Sha256).toHex();
     const QString key = QString::fromLatin1(keyBytes);
@@ -135,8 +136,8 @@ QString MediaTools::thumbnailAt(const QString &url, double seconds)
         runTool("ffmpeg", {
             "-hide_banner", "-loglevel", "error", "-threads", "1",
             "-ss", seek, "-i", path, "-frames:v", "1",
-            "-vf", "scale=160:90:force_original_aspect_ratio=decrease",
-            "-y", output
+            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease",
+            "-q:v", "2", "-y", output
         }, 15000);
 
         const bool succeeded = QFileInfo::exists(output) && QFileInfo(output).size() > 0;
