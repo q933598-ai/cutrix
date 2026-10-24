@@ -799,7 +799,10 @@ ApplicationWindow {
         var url = String(clip.url || "")
         var clipId = String(clip.clipId || "")
         var clipStart = Number(clip.start || 0)
-        var offset = Math.max(0, Number(clip.sourceOffset || 0) + seconds - clipStart)
+        var offset = clip.reverse && clip.kind === "video"
+                ? Math.max(Number(clip.sourceOffset || 0), Number(clip.sourceOffset || 0)
+                    + timelineClipDuration(clip) - Math.max(0, seconds - clipStart) - 0.04)
+                : Math.max(0, Number(clip.sourceOffset || 0) + seconds - clipStart)
 
         // A still image on the upper track overlays the lower video, but must
         // not replace its decoder: otherwise the underlying video's audio dies.
@@ -820,7 +823,10 @@ ApplicationWindow {
             var footageUrl = String(footage.url || "")
             var footageId = String(footage.clipId || "")
             var footageStart = Number(footage.start || 0)
-            var footageOffset = Math.max(0, Number(footage.sourceOffset || 0) + seconds - footageStart)
+            var footageOffset = footage.reverse
+                ? Math.max(Number(footage.sourceOffset || 0), Number(footage.sourceOffset || 0)
+                    + timelineClipDuration(footage) - Math.max(0, seconds - footageStart) - 0.04)
+                : Math.max(0, Number(footage.sourceOffset || 0) + seconds - footageStart)
             if (footageUrl !== String(timelinePreviewUrl)
                     || footageId !== String(timelinePreviewClipId)
                     || footageStart !== timelinePreviewClipStart) {
@@ -1296,6 +1302,42 @@ ApplicationWindow {
                 return
             }
 
+            if (currentClip && currentClip.kind === "video" && currentClip.reverse) {
+                var reverseId = String(currentClip.clipId || "")
+                var reverseSameClip = reverseId !== "" && reverseId === String(root.timelinePreviewClipId)
+                    && String(currentClip.url) === String(root.timelinePreviewUrl)
+                if (!reverseSameClip) {
+                    root.updateTimelinePreview(root.timelinePosition)
+                    return
+                }
+                var reverseDecoderReady = mediaPlayer.mediaStatus === MediaPlayer.LoadedMedia
+                    || mediaPlayer.mediaStatus === MediaPlayer.BufferedMedia
+                    || mediaPlayer.mediaStatus === MediaPlayer.EndOfMedia
+                if (!reverseDecoderReady) return
+                mediaPlayer.pause()
+                if (root.timelineSeekPending >= 0) {
+                    mediaPlayer.position = root.timelineSeekPending * 1000
+                    root.timelineSeekPending = -1
+                    return
+                }
+                var reverseElapsed = Math.max(0, root.timelinePosition - Number(currentClip.start || 0))
+                var reverseTarget = Math.max(Number(currentClip.sourceOffset || 0),
+                    Number(currentClip.sourceOffset || 0) + root.timelineClipDuration(currentClip)
+                        - reverseElapsed - interval / 1000 - 0.04)
+                mediaPlayer.position = reverseTarget * 1000
+                root.timelinePosition = Math.min(root.timelineDuration,
+                    root.timelinePosition + interval / 1000)
+                if (root.timelinePosition >= root.timelineDuration) {
+                    root.timelinePosition = root.timelineDuration
+                    stop()
+                    mediaPlayer.pause()
+                    root.updateTimelinePreview(root.timelinePosition)
+                    return
+                }
+                root.updateTimelinePreview(root.timelinePosition)
+                return
+            }
+
             if (currentClip) {
                 var currentId = String(currentClip.clipId || "")
                 var sameClip = currentId !== "" && currentId === String(root.timelinePreviewClipId)
@@ -1364,6 +1406,10 @@ ApplicationWindow {
                 && Number(modelData.start || 0) <= root.timelinePosition
                 && Number(modelData.start || 0) + root.timelineClipDuration(modelData) > root.timelinePosition
             function syncToTimeline() {
+                if (modelData.kind === "video" && modelData.reverse) {
+                    pause()
+                    return
+                }
                 if (!timelineAudioActive || !timelinePlaybackTimer.running) {
                     pause()
                     return
@@ -1433,7 +1479,9 @@ ApplicationWindow {
                 if (root.timelineSeekPending >= 0) {
                     mediaPlayer.position = root.timelineSeekPending * 1000
                     root.timelineSeekPending = -1
-                    if (timelinePlaybackTimer.running) mediaPlayer.play()
+                    var activeClip = root.timelineVideoAt(root.timelinePosition)
+                    if (timelinePlaybackTimer.running && !(activeClip && activeClip.reverse)) mediaPlayer.play()
+                    else if (activeClip && activeClip.reverse) mediaPlayer.pause()
                 } else if (root.timelinePreviewUrl === "") {
                     root.statusMessage = "Видео загружено: " + root.selectedMedia
                 }
@@ -1489,6 +1537,7 @@ ApplicationWindow {
             })
             root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
             root.recordTimelineHistory("Добавить текстовый клип")
+            root.recordTimelineHistory("Добавить клип на таймлайн")
             root.mediaFiles = updated
             root.saveTimelineMedia(updated)
             root.timelinePosition = start
@@ -3274,6 +3323,7 @@ ApplicationWindow {
                                                         break
                                                     }
                                                 }
+                                                root.recordTimelineHistory("Изменить длительность клипа")
                                                 root.mediaFiles = updated
                                                 root.saveTimelineMedia(updated)
                                                 root.statusMessage = "Длина клипа изменена"
@@ -3403,6 +3453,7 @@ ApplicationWindow {
                                                             ? "Клип перемещён"
                                                             : "Клип перемещён на дорожку " + ["V2", "V1", "A1", "A2", "V3"][targetTrack]
                                                     }
+                                                    root.recordTimelineHistory("Переместить клип")
                                                     root.mediaFiles = updated
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
