@@ -408,12 +408,15 @@ ApplicationWindow {
         return active.length ? active[active.length - 1] : null
     }
 
-    function setSelectedClipProperty(key, value, persist) {
+    function setSelectedClipProperty(key, value, persist, shouldRecordHistory) {
         var id = String(selectedTimelineClipId || "")
         if (id === "") return
         var updated = mediaFiles.slice()
         for (var i = 0; i < updated.length; ++i) {
             if (Number(updated[i].track) >= 0 && String(updated[i].clipId || "") === id) {
+                if (updated[i][key] === value) return
+                if (shouldRecordHistory !== false)
+                    recordTimelineHistory("Изменить свойство клипа")
                 updated[i] = Object.assign({}, updated[i])
                 updated[i][key] = value
                 mediaFiles = updated
@@ -438,7 +441,9 @@ ApplicationWindow {
                 || transformPreviewOverride[key] === undefined)
             return
         var value = transformPreviewOverride[key]
-        setSelectedClipProperty(key, value, false)
+        if (selectedTimelineClip[key] !== value)
+            recordTimelineHistory("Цветокоррекция клипа")
+        setSelectedClipProperty(key, value, false, false)
         transformPreviewOverride = ({})
         saveTimelineMedia(mediaFiles)
         statusMessage = "Свойство клипа обновлено"
@@ -509,13 +514,14 @@ ApplicationWindow {
         if (!transformGesture) return
         var g = transformGesture
         var draft = Object.assign({}, transformPreviewOverride)
+        if (Object.keys(draft).length > 0) recordTimelineHistory("Трансформация клипа")
         if (g.mode === "move") {
-            if (draft.x !== undefined) setSelectedClipProperty("x", draft.x, false)
-            if (draft.y !== undefined) setSelectedClipProperty("y", draft.y, false)
+            if (draft.x !== undefined) setSelectedClipProperty("x", draft.x, false, false)
+            if (draft.y !== undefined) setSelectedClipProperty("y", draft.y, false, false)
         } else if (g.mode === "scale" && draft.scale !== undefined) {
-            setSelectedClipProperty("scale", draft.scale, false)
+            setSelectedClipProperty("scale", draft.scale, false, false)
         } else if (g.mode === "rotate" && draft.rotation !== undefined) {
-            setSelectedClipProperty("rotation", draft.rotation, false)
+            setSelectedClipProperty("rotation", draft.rotation, false, false)
         }
         transformGesture = null
         transformPreviewOverride = ({})
@@ -526,11 +532,12 @@ ApplicationWindow {
     function resetSelectedClipTransform() {
         if (!selectedTimelineClip) return
         var defaults = {
-            x: 0, y: 0, scale: 100, zoomMode: "none", zoomAmount: 150, rotation: 0,
-            opacity: 100, brightness: 0, contrast: 0, saturation: 0
+            x: 0, y: 0, scale: 100, zoomMode: "none", zoomAmount: 150, reverse: false,
+            rotation: 0, opacity: 100, brightness: 0, contrast: 0, saturation: 0
         }
+        recordTimelineHistory("Сброс трансформации")
         for (var key in defaults)
-            setSelectedClipProperty(key, defaults[key], false)
+            setSelectedClipProperty(key, defaults[key], false, false)
         transformPreviewOverride = ({})
         saveTimelineMedia(mediaFiles)
         statusMessage = "Трансформация и цветокоррекция сброшены"
@@ -720,6 +727,7 @@ ApplicationWindow {
             sourceOffset: Math.max(0, Number(original.sourceOffset || 0)) + leftDuration
         })
         updated.splice(index + 1, 0, rightClip)
+        recordTimelineHistory("Разрезать клип")
         mediaFiles = updated
         selectedTimelineClipId = String(rightClip.clipId)
         saveTimelineMedia(updated)
@@ -737,7 +745,9 @@ ApplicationWindow {
             statusMessage = "Клип уже удалён"
             return
         }
+        recordTimelineHistory("Удалить клип")
         mediaFiles = updated
+        if (selectedTimelineClipId === id) selectedTimelineClipId = ""
         saveTimelineMedia(updated)
         contextMenuClipId = ""
         updateTimelinePreview(timelinePosition)
@@ -883,6 +893,9 @@ ApplicationWindow {
     function openProject(path, name) {
         if (!projectStore.openProject(path)) { statusMessage = projectStore.lastError(); return }
         currentProjectPath = path
+        undoStack = []
+        redoStack = []
+        selectedTimelineClipId = ""
         currentProjectName = name || path.split("/").pop().replace(/\.cutrix$/, "")
         var savedMedia = projectStore.projectMedia(path)
 
@@ -997,6 +1010,7 @@ ApplicationWindow {
             added += 1
             if (firstImportedName === "") firstImportedName = source.name
         }
+        if (added > 0) root.recordTimelineHistory("Импорт медиа")
         root.mediaFiles = updated
         root.selectedTimelineClipId = ""
         if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
@@ -1115,13 +1129,17 @@ ApplicationWindow {
         Menu {
             title: "Правка"
             Action { text: "Разрезать клип по курсору"; enabled: !!root.selectedTimelineClip; onTriggered: root.splitSelectedTimelineClip() }
-            Action { text: "Отменить (скоро)"; onTriggered: root.statusMessage = "История действий появится позже" }
-            Action { text: "Повторить (скоро)"; onTriggered: root.statusMessage = "История действий появится позже" }
+            Action { text: "Отменить  Ctrl+Z"; enabled: root.undoStack.length > 0; onTriggered: root.undoTimelineAction() }
+            Action { text: "Повторить  Ctrl+Shift+Z"; enabled: root.redoStack.length > 0; onTriggered: root.redoTimelineAction() }
         }
         Menu {
             title: "Воспроизведение"
             Action { text: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Пауза" : "Воспроизвести"; enabled: root.selectedMediaUrl !== ""; onTriggered: { if (mediaPlayer.playbackState === MediaPlayer.PlayingState) mediaPlayer.pause(); else mediaPlayer.play() } }
         }
+        Shortcut { sequence: "Ctrl+Z"; context: Qt.WindowShortcut; onActivated: root.undoTimelineAction() }
+        Shortcut { sequence: "Ctrl+Shift+Z"; context: Qt.WindowShortcut; onActivated: root.redoTimelineAction() }
+        Shortcut { sequence: "Ctrl+Y"; context: Qt.WindowShortcut; onActivated: root.redoTimelineAction() }
+
         Menu {
             title: "Справка"
             Action { text: "О Cutrix"; onTriggered: aboutDialog.open() }
@@ -1470,6 +1488,7 @@ ApplicationWindow {
                 fontSize: 30, fontFamily: "Sans", textColor: "#ffffff"
             })
             root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
+            root.recordTimelineHistory("Добавить текстовый клип")
             root.mediaFiles = updated
             root.saveTimelineMedia(updated)
             root.timelinePosition = start
