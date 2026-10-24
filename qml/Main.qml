@@ -831,12 +831,13 @@ ApplicationWindow {
     Instantiator {
         id: timelineAudioPlayers
         model: root.mediaFiles.filter(function(item) {
-            return item.kind === "audio" && Number(item.track) >= 0
+            return (item.kind === "audio" || item.kind === "video")
+                && (Number(item.track) === 2 || Number(item.track) === 3)
         })
         delegate: MediaPlayer {
             required property var modelData
             source: modelData.url
-            audioOutput: AudioOutput {}
+            audioOutput: AudioOutput { volume: root.timelineClipProperty(modelData, "volume", 100) / 100 }
             property bool timelineAudioActive: timelinePlaybackTimer.running
                 && Number(modelData.start || 0) <= root.timelinePosition
                 && Number(modelData.start || 0) + root.timelineClipDuration(modelData) > root.timelinePosition
@@ -1968,7 +1969,11 @@ ApplicationWindow {
                                                     draggingClip = false
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
-                                                    if (!wasDragging) return
+                                                    if (!wasDragging) {
+                                                         root.selectedTimelineClipId = String(timelineClip.modelData.clipId || "")
+                                                         root.selectedMedia = String(timelineClip.modelData.name || "")
+                                                         return
+                                                     }
 
                                                     var updated = root.mediaFiles.slice()
                                                     var movingIndex = -1
@@ -2046,7 +2051,7 @@ ApplicationWindow {
                                             var updated = root.mediaFiles.slice()
                                             var sourceIndex = -1
                                             for (var i = 0; i < updated.length; ++i) {
-                                                if (String(updated[i].url) === url && Number(updated[i].track) < 0) {
+                                                if (root.normalizedMediaUrl(updated[i].url) === root.normalizedMediaUrl(url) && Number(updated[i].track) < 0) {
                                                     sourceIndex = i
                                                     break
                                                 }
@@ -2076,13 +2081,18 @@ ApplicationWindow {
                                             var didSnap = Math.abs(start - requestedStart) > 0.001
 
                                             var clip = Object.assign({}, source, {
-                                                clipId: root.createTimelineClipId(),
-                                                track: targetTrack,
-                                                start: start,
-                                                duration: duration
-                                            })
-                                            updated.push(clip)
-                                            root.mediaFiles = updated
+                                                 clipId: root.createTimelineClipId(),
+                                                 track: targetTrack,
+                                                 start: start,
+                                                 duration: duration,
+                                                 x: 0, y: 0, scale: 100,
+                                                 rotation: 0, opacity: 100, volume: 100,
+                                                 fontSize: 30, textColor: "#ffffff"
+                                             })
+                                             updated.push(clip)
+                                             root.selectedTimelineClipId = String(clip.clipId)
+                                             root.selectedMedia = String(clip.name || "")
+                                             root.mediaFiles = updated
                                             root.saveTimelineMedia(updated)
                                             root.timelinePosition = start
                                             var actualTrackName = ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"][targetTrack]
