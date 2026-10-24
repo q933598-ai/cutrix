@@ -81,6 +81,7 @@ ApplicationWindow {
     property real timelineSeekPending: -1
     property int timelineClipSerial: 0
     property string contextMenuClipId: ""
+    property real contextMenuTimelinePosition: 0
     // Temporary transform values update the preview every frame and are saved
     // to the project only when the user releases a transform handle.
     property var transformPreviewOverride: ({})
