@@ -41,6 +41,18 @@ ApplicationWindow {
     readonly property bool selectedClipCanZoom: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
+    readonly property bool selectedClipCanReverse: !!selectedTimelineClip
+        && selectedTimelineClip.kind === "video"
+        && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
+    readonly property bool selectedClipCanTranscribe: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "audio")
+        && Number(selectedTimelineClip.track) >= 0
+    property string activeSidebarSection: "Медиа"
+    property string selectedWhisperModel: ""
+    property string pendingSubtitleClipId: ""
+    property var undoStack: []
+    property var redoStack: []
+    property bool historyApplying: false
     property string mediaSearch: ""
     property string exportErrorDetail: ""
     property string exportOutputPath: ""
@@ -103,6 +115,201 @@ ApplicationWindow {
     function saveTimelineMedia(items) {
         if (currentProjectPath !== "")
             projectStore.saveProjectMedia(currentProjectPath, items)
+    }
+
+    function cloneTimelineItems(items) {
+        return JSON.parse(JSON.stringify(items || []))
+    }
+
+    function recordTimelineHistory(label) {
+        if (historyApplying || currentProjectPath === "") return
+        var stack = undoStack.slice()
+        stack.push({
+            items: cloneTimelineItems(mediaFiles),
+            selectedClipId: String(selectedTimelineClipId || ""),
+            position: Number(timelinePosition || 0),
+            label: String(label || "Изменение")
+        })
+        if (stack.length > 80) stack.shift()
+        undoStack = stack
+        redoStack = []
+    }
+
+    function currentHistorySnapshot(label) {
+        return {
+            items: cloneTimelineItems(mediaFiles),
+            selectedClipId: String(selectedTimelineClipId || ""),
+            position: Number(timelinePosition || 0),
+            label: String(label || "Изменение")
+        }
+    }
+
+    function restoreHistorySnapshot(snapshot) {
+        if (!snapshot) return
+        historyApplying = true
+        mediaFiles = cloneTimelineItems(snapshot.items)
+        selectedTimelineClipId = String(snapshot.selectedClipId || "")
+        timelinePosition = Math.max(0, Math.min(timelineDuration, Number(snapshot.position || 0)))
+        transformPreviewOverride = ({})
+        transformGesture = null
+        saveTimelineMedia(mediaFiles)
+        updateTimelinePreview(timelinePosition)
+        historyApplying = false
+    }
+
+    function undoTimelineAction() {
+        if (undoStack.length === 0) {
+            statusMessage = "Нечего отменять"
+            return
+        }
+        var stack = undoStack.slice()
+        var snapshot = stack.pop()
+        undoStack = stack
+        redoStack = redoStack.concat([currentHistorySnapshot(snapshot.label)])
+        restoreHistorySnapshot(snapshot)
+        statusMessage = "Отменено: " + snapshot.label
+    }
+
+    function redoTimelineAction() {
+        if (redoStack.length === 0) {
+            statusMessage = "Нечего повторять"
+            return
+        }
+        var stack = redoStack.slice()
+        var snapshot = stack.pop()
+        redoStack = stack
+        undoStack = undoStack.concat([currentHistorySnapshot(snapshot.label)])
+        restoreHistorySnapshot(snapshot)
+        statusMessage = "Повторено: " + snapshot.label
+    }
+
+    function setSelectedClipProperties(changes, label, persist) {
+        var id = String(selectedTimelineClipId || "")
+        if (id === "" || !changes) return
+        var updated = mediaFiles.slice()
+        for (var i = 0; i < updated.length; ++i) {
+            if (Number(updated[i].track) < 0 || String(updated[i].clipId || "") !== id)
+                continue
+            var item = Object.assign({}, updated[i])
+            var changed = false
+            for (var key in changes) {
+                if (item[key] !== changes[key]) {
+                    item[key] = changes[key]
+                    changed = true
+                }
+            }
+            if (!changed) return
+            recordTimelineHistory(label || "Изменить клип")
+            updated[i] = item
+            mediaFiles = updated
+            transformPreviewOverride = ({})
+            if (persist !== false) saveTimelineMedia(updated)
+            updateTimelinePreview(timelinePosition)
+            statusMessage = label || "Свойства клипа обновлены"
+            return
+        }
+    }
+
+    function applyStaticZoom(scale) {
+        if (!selectedClipCanZoom) {
+            statusMessage = "Выбери видео или изображение на дорожке"
+            return
+        }
+        setSelectedClipProperties({
+            scale: scale,
+            zoomMode: "none",
+            zoomAmount: 150
+        }, scale > 100 ? "Эффект «Приближение»" : scale < 100
+            ? "Эффект «Отдаление»" : "Сброс масштаба")
+    }
+
+    function toggleSelectedClipReverse() {
+        if (!selectedClipCanReverse) {
+            statusMessage = "Реверс доступен для видеоклипа на V1/V2"
+            return
+        }
+        setSelectedClipProperties({ reverse: !Boolean(selectedTimelineClip.reverse) },
+            selectedTimelineClip.reverse ? "Отключить реверс" : "Эффект «Реверс»")
+    }
+
+    function requestAutoSubtitles() {
+        if (!selectedClipCanTranscribe) {
+            statusMessage = "Выбери видеоклип или аудиоклип на таймлайне"
+            return
+        }
+        pendingSubtitleClipId = String(selectedTimelineClip.clipId || "")
+        if (selectedWhisperModel === "") {
+            whisperModelDialog.open()
+            return
+        }
+        startSubtitleGeneration()
+    }
+
+    function startSubtitleGeneration() {
+        var clip = timelineClipById(pendingSubtitleClipId)
+        if (!clip || Number(clip.track) < 0) {
+            statusMessage = "Исходный клип для субтитров больше не найден"
+            return
+        }
+        mediaTools.startTranscription(String(clip.url || ""), selectedWhisperModel,
+            Math.max(0, Number(clip.sourceOffset || 0)), timelineClipDuration(clip))
+    }
+
+    function insertGeneratedSubtitles(segments) {
+        var sourceClip = timelineClipById(pendingSubtitleClipId)
+        if (!sourceClip) {
+            statusMessage = "Клип удалён до завершения распознавания"
+            return
+        }
+        var sourceStart = Number(sourceClip.start || 0)
+        var sourceDuration = timelineClipDuration(sourceClip)
+        var updated = mediaFiles.slice()
+        var added = 0
+        var firstCaptionId = ""
+        for (var i = 0; i < segments.length; ++i) {
+            var segment = segments[i]
+            var relativeStart = Math.max(0, Number(segment.start || 0))
+            var relativeEnd = Math.min(sourceDuration, Number(segment.end || 0))
+            if (!isFinite(relativeStart) || !isFinite(relativeEnd) || relativeEnd <= relativeStart)
+                continue
+            if (i + 1 < segments.length) {
+                var nextStart = Number(segments[i + 1].start)
+                if (isFinite(nextStart) && nextStart > relativeStart)
+                    relativeEnd = Math.min(relativeEnd, nextStart)
+            }
+            if (relativeEnd - relativeStart < 0.08) continue
+            var captionText = String(segment.text || "").trim()
+            if (captionText === "") continue
+            var caption = {
+                clipId: createTimelineClipId(),
+                name: "Субтитр: " + captionText.substring(0, 24),
+                text: captionText,
+                url: "",
+                kind: "text",
+                track: 4,
+                start: sourceStart + relativeStart,
+                duration: relativeEnd - relativeStart,
+                x: 0, y: 0, scale: 100,
+                zoomMode: "none", zoomAmount: 150, reverse: false,
+                rotation: 0, opacity: 100, volume: 100,
+                fontSize: 30, fontFamily: "Sans", textColor: "#ffffff"
+            }
+            if (firstCaptionId === "") firstCaptionId = String(caption.clipId)
+            updated.push(caption)
+            added += 1
+        }
+        if (added === 0) {
+            statusMessage = "Не удалось создать субтитры для этого фрагмента"
+            return
+        }
+        recordTimelineHistory("Автоматические субтитры")
+        mediaFiles = updated
+        selectedTimelineClipId = firstCaptionId
+        timelinePosition = sourceStart
+        saveTimelineMedia(updated)
+        updateTimelinePreview(timelinePosition)
+        statusMessage = "Создано субтитров: " + added
+        activeSidebarSection = "Медиа"
     }
 
     // A stable ID distinguishes two instances of the same source file on the timeline.
