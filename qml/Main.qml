@@ -223,6 +223,62 @@ ApplicationWindow {
             ? "Эффект «Отдаление»" : "Сброс масштаба")
     }
 
+    function applyColorPreset(preset) {
+        if (!selectedClipCanColorCorrect) {
+            statusMessage = "Выбери видео или изображение на таймлайне"
+            return
+        }
+        var values = { brightness: 0, contrast: 0, saturation: 0 }
+        var label = "Обычные цвета"
+        if (preset === "bw") {
+            values = { brightness: 0.02, contrast: 0.16, saturation: -1 }
+            label = "Чёрно-белый"
+        } else if (preset === "film") {
+            values = { brightness: 0.06, contrast: -0.12, saturation: -0.28 }
+            label = "Плёнка"
+        } else if (preset === "punch") {
+            values = { brightness: 0, contrast: 0.32, saturation: 0.16 }
+            label = "Контраст"
+        } else if (preset === "fade") {
+            values = { brightness: 0.08, contrast: -0.28, saturation: -0.18 }
+            label = "Выцветание"
+        }
+        setSelectedClipProperties(values, "Эффект «" + label + "»")
+    }
+
+    function addPixelSticker(preset) {
+        if (!preset) return
+        var duration = 5
+        var start = findFreeTimelineStart(4, Math.max(0, timelinePosition), duration, "")
+        var sticker = {
+            clipId: createTimelineClipId(),
+            name: "Стикер: " + String(preset.name || preset.glyph || "8-bit"),
+            text: String(preset.glyph || "★"),
+            url: "",
+            kind: "text",
+            sticker: true,
+            track: 4,
+            start: start,
+            duration: duration,
+            x: 0, y: 0, scale: 100,
+            zoomMode: "none", zoomAmount: 150, reverse: false,
+            rotation: 0, opacity: 100, volume: 100,
+            fontSize: String(preset.glyph || "").length > 3 ? 40 : 58,
+            fontFamily: "Monospace",
+            textColor: String(preset.color || "#f6c177")
+        }
+        var updated = mediaFiles.slice()
+        updated.push(sticker)
+        recordTimelineHistory("Добавить пиксельный стикер")
+        mediaFiles = updated
+        selectedTimelineClipId = String(sticker.clipId)
+        timelinePosition = start
+        saveTimelineMedia(updated)
+        updateTimelinePreview(start)
+        activeSidebarSection = "Медиа"
+        statusMessage = "Пиксельный стикер добавлен · 5 секунд"
+    }
+
     function toggleSelectedClipReverse() {
         if (!selectedClipCanReverse) {
             statusMessage = "Реверс доступен для видеоклипа на V1/V2"
@@ -457,6 +513,49 @@ ApplicationWindow {
         }
         var visual = timelineVideoAt(timelinePosition)
         return !!visual && String(visual.clipId || "") === String(selectedTimelineClipId)
+    }
+
+    function pointInsidePreviewClip(item, sceneX, sceneY) {
+        if (!item || !previewCanvas || previewCanvas.width <= 0 || previewCanvas.height <= 0)
+            return false
+        var textTarget = item.kind === "text"
+        var baseWidth = textTarget ? timelineTextOverlay.width : previewCanvas.width
+        var baseHeight = textTarget ? Math.max(32, timelineTextOverlay.height) : previewCanvas.height
+        var scale = (textTarget
+            ? timelineClipProperty(item, "scale", 100)
+            : timelineClipScaleAt(item, timelinePosition)) / 100
+        if (!isFinite(scale) || scale <= 0) return false
+        var centerX = previewCanvas.width / 2 + timelinePreviewOffsetX(item, previewCanvas.width)
+        var centerY = previewCanvas.height / 2 + timelinePreviewOffsetY(item, previewCanvas.height)
+        var dx = sceneX - centerX
+        var dy = sceneY - centerY
+        var radians = -timelineClipProperty(item, "rotation", 0) * Math.PI / 180
+        var localX = (dx * Math.cos(radians) - dy * Math.sin(radians)) / scale
+        var localY = (dx * Math.sin(radians) + dy * Math.cos(radians)) / scale
+        return Math.abs(localX) <= baseWidth / 2 && Math.abs(localY) <= baseHeight / 2
+    }
+
+    function previewElementAt(sceneX, sceneY) {
+        if (!timelinePreviewActive || timelinePlaybackTimer.running) return ""
+        var title = timelineTextAt(timelinePosition)
+        if (title && pointInsidePreviewClip(title, sceneX, sceneY))
+            return String(title.clipId || "")
+        var visual = timelineVideoAt(timelinePosition)
+        if (visual && pointInsidePreviewClip(visual, sceneX, sceneY))
+            return String(visual.clipId || "")
+        return ""
+    }
+
+    function selectPreviewElementAt(sceneX, sceneY) {
+        var hitId = previewElementAt(sceneX, sceneY)
+        if (hitId !== "") {
+            selectedTimelineClipId = hitId
+            transformPreviewOverride = ({})
+            transformGesture = null
+            statusMessage = "Выбран элемент в предпросмотре"
+        } else {
+            selectedTimelineClipId = ""
+        }
     }
 
     function beginTransformGesture(mode, sceneX, sceneY) {
@@ -1557,6 +1656,72 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: stickerDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        width: 430
+        title: "Пиксельные стикеры"
+        standardButtons: Dialog.Cancel
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                text: "Выбери стикер — он появится на отдельном клипе, который можно двигать, масштабировать и поворачивать."
+                color: theme.muted
+                wrapMode: Text.WordWrap
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 3
+                rowSpacing: 6
+                columnSpacing: 6
+                Repeater {
+                    model: [
+                        { glyph: "★", name: "Звезда", color: "#f6c177" },
+                        { glyph: "♥", name: "Сердце", color: "#eb6f92" },
+                        { glyph: "⚡", name: "Молния", color: "#f6c177" },
+                        { glyph: "GG", name: "GG", color: "#9ccfd8" },
+                        { glyph: "LOL", name: "LOL", color: "#c4a7e7" },
+                        { glyph: "+100", name: "+100", color: "#9ccfd8" },
+                        { glyph: "☠", name: "Череп", color: "#e0def4" },
+                        { glyph: "◆", name: "Алмаз", color: "#9ccfd8" },
+                        { glyph: "8-BIT", name: "8-BIT", color: "#f6c177" },
+                        { glyph: "WIN", name: "Победа", color: "#a3be8c" },
+                        { glyph: "!!!", name: "Вау", color: "#eb6f92" },
+                        { glyph: "xD", name: "Смех", color: "#c4a7e7" }
+                    ]
+                    delegate: Button {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 62
+                        text: modelData.glyph + "\n" + modelData.name
+                        font.family: "monospace"
+                        font.pixelSize: 15
+                        onClicked: {
+                            root.addPixelSticker(modelData)
+                            stickerDialog.close()
+                        }
+                        palette.buttonText: modelData.color
+                        background: Rectangle {
+                            color: theme.panelAlt
+                            border.color: modelData.color
+                            radius: 2
+                        }
+                    }
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                text: "Совет: после добавления выдели стикер и измени размер/положение в предпросмотре."
+                color: theme.muted
+                wrapMode: Text.WordWrap
+            }
+        }
+        background: Rectangle { color: theme.panel; border.color: theme.accent; radius: 0 }
+    }
+
     property string pendingProjectName: ""
     property string pendingResolution: "1920×1080"
     property int pendingFps: 30
@@ -2070,6 +2235,9 @@ ApplicationWindow {
                                     } else if (modelData[1] === "Текст") {
                                         root.activeSidebarSection = "Медиа"
                                         textClipDialog.open()
+                                    } else if (modelData[1] === "Стикеры") {
+                                        root.activeSidebarSection = "Стикеры"
+                                        stickerDialog.open()
                                     } else if (modelData[1] === "Аудио") {
                                         root.activeSidebarSection = "Медиа"
                                         importDialog.open()
@@ -2314,6 +2482,52 @@ ApplicationWindow {
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                     }
+                    Text {
+                        text: "ЦВЕТОВЫЕ ПРЕСЕТЫ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 4
+                        rowSpacing: 4
+                        Repeater {
+                            model: [
+                                { label: "◐ Ч/Б", preset: "bw" },
+                                { label: "▧ Плёнка", preset: "film" },
+                                { label: "✦ Контраст", preset: "punch" },
+                                { label: "▤ Выцветание", preset: "fade" }
+                            ]
+                            delegate: Button {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                text: modelData.label
+                                enabled: root.selectedClipCanColorCorrect
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                                onClicked: root.applyColorPreset(modelData.preset)
+                                palette.buttonText: theme.text
+                                background: Rectangle {
+                                    color: theme.panelAlt
+                                    border.color: theme.border
+                                    radius: 2
+                                }
+                            }
+                        }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Сбросить цветовой эффект"
+                        enabled: root.selectedClipCanColorCorrect
+                        onClicked: root.applyColorPreset("none")
+                        font.family: "monospace"
+                        font.pixelSize: 10
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                    }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text {
                         text: "СКОРОСТЬ И НАПРАВЛЕНИЕ"
@@ -2431,7 +2645,9 @@ ApplicationWindow {
                             id: videoOutput
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
-                            visible: true
+                            visible: !root.timelinePreviewActive || root.timelineImageActive
+                                || (timelinePlaybackTimer.running
+                                    && mediaPlayer.playbackState === MediaPlayer.PlayingState)
                             opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Scale {
@@ -2491,10 +2707,6 @@ ApplicationWindow {
                                     || mediaPlayer.playbackState !== MediaPlayer.PlayingState)
                             opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
-                                Translate {
-                                    x: root.timelinePreviewOffsetX(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.width)
-                                    y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.height)
-                                },
                                 Scale {
                                     xScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
                                     yScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
@@ -2505,6 +2717,10 @@ ApplicationWindow {
                                     angle: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0)
                                     origin.x: timelineVideoStillPreview.width / 2
                                     origin.y: timelineVideoStillPreview.height / 2
+                                },
+                                Translate {
+                                    x: root.timelinePreviewOffsetX(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.width)
+                                    y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.height)
                                 }
                             ]
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
@@ -2560,7 +2776,7 @@ ApplicationWindow {
                             id: timelineTextOverlay
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width * 0.86
+                            width: Math.min(parent.width * 0.86, Math.max(40, implicitWidth))
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.WordWrap
                             color: root.timelineTextAt(root.timelinePosition)
@@ -2594,6 +2810,15 @@ ApplicationWindow {
                                 ? String(root.timelineTextAt(root.timelinePosition).text || "") : ""
                             visible: text !== "" && root.timelinePreviewActive
                         }
+                        MouseArea {
+                            id: previewSelectionArea
+                            anchors.fill: parent
+                            z: 10
+                            visible: root.timelinePreviewActive && !timelinePlaybackTimer.running
+                            acceptedButtons: Qt.LeftButton
+                            onClicked: root.selectPreviewElementAt(mouse.x, mouse.y)
+                        }
+
                         Item {
                             id: transformOverlay
                             anchors.fill: parent
@@ -2630,6 +2855,13 @@ ApplicationWindow {
                                     cursorShape: Qt.SizeAllCursor
                                     onPressed: function(mouse) {
                                         var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                        var hitId = root.previewElementAt(point.x, point.y)
+                                        if (hitId !== "" && hitId !== String(root.selectedTimelineClipId)) {
+                                            root.selectedTimelineClipId = hitId
+                                            root.transformPreviewOverride = ({})
+                                            root.transformGesture = null
+                                            return
+                                        }
                                         root.beginTransformGesture("move", point.x, point.y)
                                     }
                                     onPositionChanged: function(mouse) {
