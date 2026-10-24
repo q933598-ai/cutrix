@@ -177,6 +177,24 @@ ApplicationWindow {
         }
     }
 
+    function previewSelectedClipProperty(key, value) {
+        if (!selectedTimelineClip) return
+        var draft = Object.assign({}, transformPreviewOverride)
+        draft[key] = value
+        transformPreviewOverride = draft
+    }
+
+    function commitSelectedClipPreviewProperty(key) {
+        if (!selectedTimelineClip || !transformPreviewOverride
+                || transformPreviewOverride[key] === undefined)
+            return
+        var value = transformPreviewOverride[key]
+        setSelectedClipProperty(key, value, false)
+        transformPreviewOverride = ({})
+        saveTimelineMedia(mediaFiles)
+        statusMessage = "Свойство клипа обновлено"
+    }
+
     function previewHasSelectedTransformClip() {
         if (!selectedClipCanTransform || !timelinePreviewActive) return false
         if (selectedTimelineClip.kind === "text") {
@@ -2300,11 +2318,38 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Text { text: "Непрозрачность"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
                         Slider {
+                            id: opacitySlider
                             Layout.fillWidth: true
-                            from: 10; to: 100; stepSize: 5
+                            from: 0; to: 100; stepSize: 5
                             value: root.timelineClipProperty(root.selectedTimelineClip, "opacity", 100)
                             enabled: root.selectedClipCanTransform
-                            onMoved: root.setSelectedClipProperty("opacity", Math.round(value))
+                            onPressedChanged: {
+                                if (pressed) root.transformPreviewOverride = ({})
+                                else root.commitSelectedClipPreviewProperty("opacity")
+                            }
+                            onMoved: root.previewSelectedClipProperty("opacity", Math.round(value))
+                            background: Rectangle {
+                                x: opacitySlider.leftPadding
+                                y: opacitySlider.topPadding + opacitySlider.availableHeight / 2 - height / 2
+                                width: opacitySlider.availableWidth
+                                height: 4
+                                radius: 2
+                                color: theme.background
+                                border.color: theme.border
+                                Rectangle {
+                                    width: opacitySlider.visualPosition * parent.width
+                                    height: parent.height
+                                    radius: 2
+                                    color: theme.accent
+                                }
+                            }
+                            handle: Rectangle {
+                                x: opacitySlider.leftPadding + opacitySlider.visualPosition * (opacitySlider.availableWidth - width)
+                                y: opacitySlider.topPadding + opacitySlider.availableHeight / 2 - height / 2
+                                width: 12; height: 12; radius: 6
+                                color: opacitySlider.pressed ? theme.accent : theme.text
+                                border.color: theme.accent
+                            }
                         }
                     }
                     RowLayout {
@@ -2312,10 +2357,39 @@ ApplicationWindow {
                         visible: !!root.selectedTimelineClip
                         Text { text: "Громкость %"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
                         Slider {
+                            id: volumeSlider
                             Layout.fillWidth: true
                             from: 0; to: 100; stepSize: 5
                             value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
-                            onMoved: root.setSelectedClipProperty("volume", Math.round(value))
+                            enabled: !!root.selectedTimelineClip
+                                && (root.selectedTimelineClip.kind === "audio" || root.selectedTimelineClip.kind === "video")
+                            onPressedChanged: {
+                                if (pressed) root.transformPreviewOverride = ({})
+                                else root.commitSelectedClipPreviewProperty("volume")
+                            }
+                            onMoved: root.previewSelectedClipProperty("volume", Math.round(value))
+                            background: Rectangle {
+                                x: volumeSlider.leftPadding
+                                y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
+                                width: volumeSlider.availableWidth
+                                height: 4
+                                radius: 2
+                                color: theme.background
+                                border.color: theme.border
+                                Rectangle {
+                                    width: volumeSlider.visualPosition * parent.width
+                                    height: parent.height
+                                    radius: 2
+                                    color: theme.accent
+                                }
+                            }
+                            handle: Rectangle {
+                                x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
+                                y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
+                                width: 12; height: 12; radius: 6
+                                color: volumeSlider.pressed ? theme.accent : theme.text
+                                border.color: theme.accent
+                            }
                         }
                     }
                     ColumnLayout {
@@ -2339,6 +2413,20 @@ ApplicationWindow {
                             Text { text: "Размер"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
                             SpinBox {
                                 from: 8; to: 180; editable: true
+                                palette.text: theme.text
+                                background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                                contentItem: TextInput {
+                                    text: parent.displayText
+                                    color: theme.text
+                                    selectionColor: theme.accent
+                                    selectedTextColor: theme.background
+                                    horizontalAlignment: Qt.AlignHCenter
+                                    verticalAlignment: Qt.AlignVCenter
+                                    font.family: "monospace"
+                                    readOnly: !parent.editable
+                                    validator: parent.validator
+                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                }
                                 value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "fontSize", 30))
                                 onValueModified: root.setSelectedClipProperty("fontSize", value)
                             }
@@ -2413,7 +2501,11 @@ ApplicationWindow {
                                 value: root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0)
                                 enabled: !!root.selectedTimelineClip && (root.selectedTimelineClip.kind === "video"
                                     || root.selectedTimelineClip.kind === "image")
-                                onMoved: root.setSelectedClipProperty(modelData.key, Math.round(value * 100) / 100)
+                                onPressedChanged: {
+                                    if (pressed) root.transformPreviewOverride = ({})
+                                    else root.commitSelectedClipPreviewProperty(modelData.key)
+                                }
+                                onMoved: root.previewSelectedClipProperty(modelData.key, Math.round(value * 100) / 100)
                                 background: Rectangle {
                                     x: correctionSlider.leftPadding
                                     y: correctionSlider.topPadding + correctionSlider.availableHeight / 2 - height / 2
