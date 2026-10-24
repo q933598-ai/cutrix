@@ -34,6 +34,10 @@ ApplicationWindow {
         && (selectedTimelineClip.kind === "text"
             || ((selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
                 && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
+    readonly property bool selectedClipCanColorCorrect: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "image"
+            || (selectedTimelineClip.kind === "video"
+                && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
     property string mediaSearch: ""
     property string exportErrorDetail: ""
     property string exportOutputPath: ""
@@ -2530,8 +2534,7 @@ ApplicationWindow {
                         font.pixelSize: (12 * root.uiFontScale / 100)
                     }
                     Text {
-                        visible: !root.selectedTimelineClip || (root.selectedTimelineClip.kind !== "video"
-                            && root.selectedTimelineClip.kind !== "image")
+                        visible: !root.selectedClipCanColorCorrect
                         text: "Выбери видео или изображение на таймлайне"
                         color: theme.muted
                         font.family: "monospace"
@@ -2572,8 +2575,7 @@ ApplicationWindow {
                                 to: 1
                                 stepSize: 0.05
                                 value: root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0)
-                                enabled: !!root.selectedTimelineClip && (root.selectedTimelineClip.kind === "video"
-                                    || root.selectedTimelineClip.kind === "image")
+                                enabled: root.selectedClipCanColorCorrect
                                 onPressedChanged: {
                                     if (pressed) root.transformPreviewOverride = ({})
                                     else root.commitSelectedClipPreviewProperty(modelData.key)
