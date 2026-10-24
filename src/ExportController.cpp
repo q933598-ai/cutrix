@@ -310,7 +310,10 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         textFile.write(clip.text.toUtf8());
         textFile.close();
 
-        const int scaledFontSize = qMax(8, qRound(clip.fontSize * clip.scale / 100.0));
+        // QML preview is roughly 360 px high; scale the user-facing font size
+        // to the chosen export frame so the title keeps its on-screen proportions.
+        const int scaledFontSize = qMax(8, qRound(clip.fontSize * clip.scale / 100.0
+                                                   * m_outputHeight / 360.0));
         const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
         const QString label = QStringLiteral("title%1").arg(titleSerial);
         const QString titleSource = QStringLiteral("titlesrc%1").arg(titleSerial);
