@@ -52,28 +52,33 @@ QVariantMap MediaTools::inspect(const QString &url) const
     result.insert("duration", 0.0);
     if (!info.exists() || !info.isFile()) return result;
 
-    const QString output = runTool("ffprobe", {
-        "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", path
-    });
-    bool ok = false;
-    const double duration = output.toDouble(&ok);
-    if (ok && duration >= 0) result.insert("duration", duration);
+    const QString probeOutput = runTool("ffprobe", {
+        "-v", "error", "-show_entries", "format=duration:stream=codec_type",
+        "-of", "default=noprint_wrappers=1", path
+    }, 12000);
+    bool durationOk = false;
+    bool hasVideo = false;
+    bool hasAudio = false;
+    double duration = 0.0;
+    const QStringList probeLines = probeOutput.split(QLatin1Char('\\n'), Qt::SkipEmptyParts);
+    for (const QString &line : probeLines) {
+        if (line == QStringLiteral("codec_type=video"))
+            hasVideo = true;
+        else if (line == QStringLiteral("codec_type=audio"))
+            hasAudio = true;
+        else if (line.startsWith(QStringLiteral("duration="))) {
+            duration = line.mid(QStringLiteral("duration=").size()).toDouble(&durationOk);
+        }
+    }
+    if (durationOk && std::isfinite(duration) && duration >= 0.0)
+        result.insert("duration", duration);
 
-    const QString streams = runTool("ffprobe", {
-        "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=codec_type", "-of", "csv=p=0", path
-    });
-    const QString audioStreams = runTool("ffprobe", {
-        "-v", "error", "-select_streams", "a:0",
-        "-show_entries", "stream=codec_type", "-of", "csv=p=0", path
-    });
     const QString suffix = info.suffix().toLower();
     if (QStringList{"png","jpg","jpeg","webp","bmp","gif","tif","tiff"}.contains(suffix))
         result.insert("kind", "image");
-    else if (!streams.isEmpty())
+    else if (hasVideo)
         result.insert("kind", "video");
-    else if (!audioStreams.isEmpty() || ok)
+    else if (hasAudio)
         result.insert("kind", "audio");
     return result;
 }
