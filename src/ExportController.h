@@ -38,6 +38,7 @@ private:
         int inputIndex = -1;
         double start = 0.0;
         double duration = 0.0;
+        double sourceOffset = 0.0;
         double x = 0.0;
         double y = 0.0;
         double scale = 100.0;
@@ -48,6 +49,7 @@ private:
         double contrast = 0.0;
         double saturation = 0.0;
         double fontSize = 42.0;
+        QString fontFamily = QStringLiteral("Sans");
         QString textColor = QStringLiteral("#ffffff");
         bool hasAudio = false;
     };
