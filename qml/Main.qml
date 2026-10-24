@@ -38,6 +38,9 @@ ApplicationWindow {
         && (selectedTimelineClip.kind === "image"
             || (selectedTimelineClip.kind === "video"
                 && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
+    readonly property bool selectedClipCanZoom: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
+        && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
     property string mediaSearch: ""
     property string exportErrorDetail: ""
     property string exportOutputPath: ""
@@ -134,6 +137,25 @@ ApplicationWindow {
             return fallback
         var value = Number(item[key])
         return isFinite(value) ? value : fallback
+    }
+
+    // Animated zoom is evaluated against the clip's local timeline time.
+    // Legacy projects without zoomMode keep their original static scale.
+    function timelineClipScaleAt(item, seconds) {
+        var baseScale = timelineClipProperty(item, "scale", 100)
+        if (!item) return baseScale
+        var mode = String(item.zoomMode || "none")
+        if (mode !== "in" && mode !== "out") return baseScale
+        var amount = Number(item.zoomAmount)
+        if (!isFinite(amount)) amount = 150
+        amount = Math.max(110, Math.min(250, amount)) / 100
+        var duration = Math.max(0.001, timelineClipDuration(item))
+        var progress = (Number(seconds) - Number(item.start || 0)) / duration
+        progress = Math.max(0, Math.min(1, progress))
+        var factor = mode === "in"
+            ? 1 + (amount - 1) * progress
+            : amount - (amount - 1) * progress
+        return baseScale * factor
     }
 
     function projectFrameWidth() {
@@ -1979,8 +2001,8 @@ ApplicationWindow {
                             opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Scale {
-                                    xScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
-                                    yScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
+                                    xScale: root.timelineClipScaleAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) / 100
+                                    yScale: root.timelineClipScaleAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) / 100
                                     origin.x: videoOutput.width / 2
                                     origin.y: videoOutput.height / 2
                                 },
@@ -2040,8 +2062,8 @@ ApplicationWindow {
                                     y: root.timelinePreviewOffsetY(root.timelineVideoAt(root.timelinePosition), timelineVideoStillPreview.height)
                                 },
                                 Scale {
-                                    xScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
-                                    yScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
+                                    xScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
+                                    yScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
                                     origin.x: timelineVideoStillPreview.width / 2
                                     origin.y: timelineVideoStillPreview.height / 2
                                 },
@@ -2145,7 +2167,7 @@ ApplicationWindow {
                             visible: root.previewHasSelectedTransformClip()
                             property var targetClip: root.selectedTimelineClip
                             readonly property bool titleTarget: targetClip && targetClip.kind === "text"
-                            readonly property real targetScale: root.timelineClipProperty(targetClip, "scale", 100) / 100
+                            readonly property real targetScale: root.timelineClipScaleAt(targetClip, root.timelinePosition) / 100
                             readonly property real baseWidth: titleTarget ? timelineTextOverlay.width : previewCanvas.width
                             readonly property real baseHeight: titleTarget ? Math.max(32, timelineTextOverlay.height) : previewCanvas.height
 
@@ -2442,6 +2464,84 @@ ApplicationWindow {
                             value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "rotation", 0))
                             enabled: root.selectedClipCanTransform
                             onValueModified: root.setSelectedClipProperty("rotation", value)
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 5
+                        Text {
+                            text: "АНИМАЦИЯ ПРИБЛИЖЕНИЯ"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        ComboBox {
+                            id: zoomModeBox
+                            Layout.fillWidth: true
+                            model: ["Без эффекта", "Приближение", "Отдаление"]
+                            currentIndex: !root.selectedTimelineClip ? 0
+                                : root.selectedTimelineClip.zoomMode === "in" ? 1
+                                : root.selectedTimelineClip.zoomMode === "out" ? 2 : 0
+                            enabled: root.selectedClipCanZoom
+                            onActivated: function(index) {
+                                if (!root.selectedClipCanZoom) return
+                                root.setSelectedClipProperty("zoomMode", index === 1 ? "in"
+                                    : index === 2 ? "out" : "none")
+                            }
+                            palette.text: theme.text
+                            background: Rectangle {
+                                color: theme.background
+                                border.color: theme.border
+                                radius: 2
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Сила %"
+                                color: theme.text
+                                font.family: "monospace"
+                                font.pixelSize: 11 * root.uiFontScale / 100
+                            }
+                            SpinBox {
+                                Layout.fillWidth: true
+                                from: 110
+                                to: 250
+                                stepSize: 5
+                                editable: true
+                                value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "zoomAmount", 150))
+                                enabled: root.selectedClipCanZoom
+                                    && !!root.selectedTimelineClip
+                                    && (root.selectedTimelineClip.zoomMode === "in"
+                                        || root.selectedTimelineClip.zoomMode === "out")
+                                onValueModified: root.setSelectedClipProperty("zoomAmount", value)
+                                palette.text: theme.text
+                                background: Rectangle {
+                                    color: theme.background
+                                    border.color: theme.border
+                                    radius: 2
+                                }
+                                contentItem: TextInput {
+                                    text: parent.displayText
+                                    color: theme.text
+                                    selectionColor: theme.accent
+                                    selectedTextColor: theme.background
+                                    horizontalAlignment: Qt.AlignHCenter
+                                    verticalAlignment: Qt.AlignVCenter
+                                    font.family: "monospace"
+                                    readOnly: !parent.editable
+                                    validator: parent.validator
+                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                }
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Плавно меняет масштаб от начала до конца клипа."
+                            color: theme.muted
+                            wrapMode: Text.WordWrap
+                            font.family: "monospace"
+                            font.pixelSize: 9 * root.uiFontScale / 100
                         }
                     }
                     RowLayout {
