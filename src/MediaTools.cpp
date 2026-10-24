@@ -98,6 +98,16 @@ QString MediaTools::thumbnail(const QString &url)
 
 QString MediaTools::thumbnailAt(const QString &url, double seconds)
 {
+    return thumbnailAtSize(url, seconds, 160);
+}
+
+QString MediaTools::previewFrameAt(const QString &url, double seconds)
+{
+    return thumbnailAtSize(url, seconds, 1280);
+}
+
+QString MediaTools::thumbnailAtSize(const QString &url, double seconds, int maxWidth)
+{
     const QString path = localPath(url);
     const QFileInfo info(path);
     if (!info.exists() || !info.isFile()) return {};
@@ -111,7 +121,8 @@ QString MediaTools::thumbnailAt(const QString &url, double seconds)
     const QString cacheDir = cacheRoot + "/media-thumbnails";
     if (!QDir().mkpath(cacheDir)) return {};
     const QByteArray keyBytes = QCryptographicHash::hash(
-        (QStringLiteral("cutrix-preview-v2|") + info.absoluteFilePath()
+        (QStringLiteral("cutrix-preview-v3|") + QString::number(maxWidth)
+         + "|" + info.absoluteFilePath()
          + "|" + QString::number(info.lastModified().toSecsSinceEpoch())
          + "|" + QString::number(safeSeconds, 'f', 2))
             .toUtf8(), QCryptographicHash::Sha256).toHex();
@@ -136,7 +147,8 @@ QString MediaTools::thumbnailAt(const QString &url, double seconds)
         runTool("ffmpeg", {
             "-hide_banner", "-loglevel", "error", "-threads", "1",
             "-ss", seek, "-i", path, "-frames:v", "1",
-            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease",
+            "-vf", QStringLiteral("scale=%1:%2:force_original_aspect_ratio=decrease")
+                .arg(maxWidth).arg(maxWidth * 9 / 16),
             "-q:v", "2", "-y", output
         }, 15000);
 
