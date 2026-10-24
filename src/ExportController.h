@@ -44,6 +44,9 @@ private:
         double rotation = 0.0;
         double opacity = 100.0;
         double volume = 100.0;
+        double brightness = 0.0;
+        double contrast = 0.0;
+        double saturation = 0.0;
         double fontSize = 42.0;
         QString textColor = QStringLiteral("#ffffff");
         bool hasAudio = false;
