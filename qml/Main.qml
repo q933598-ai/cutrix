@@ -146,6 +146,21 @@ ApplicationWindow {
         return Math.max(1, parseInt(parts[1]) || 1080)
     }
 
+    function projectAspectLabel() {
+        var frameWidth = projectFrameWidth()
+        var frameHeight = projectFrameHeight()
+        var a = frameWidth
+        var b = frameHeight
+        while (b !== 0) {
+            var remainder = a % b
+            a = b
+            b = remainder
+        }
+        var divisor = Math.max(1, a)
+        return (frameWidth / divisor) + ":" + (frameHeight / divisor)
+            + " · " + frameWidth + "×" + frameHeight
+    }
+
     function timelinePreviewOffsetX(item, previewWidth) {
         return timelineClipProperty(item, "x", 0) * previewWidth / projectFrameWidth()
     }
@@ -1288,7 +1303,7 @@ ApplicationWindow {
             ComboBox {
                 id: resolutionBox
                 Layout.fillWidth: true
-                model: ["1920×1080", "2560×1440", "3840×2160", "1280×720"]
+                model: ["1920×1080", "2560×1440", "3840×2160", "1280×720", "1080×1920", "720×1280", "1440×2560", "1080×2340"]
                 currentIndex: 0
                 palette.text: theme.text
                 palette.window: theme.panel
@@ -1337,6 +1352,14 @@ ApplicationWindow {
                     }
                     background: Rectangle { color: theme.panel; border.color: theme.accent; border.width: 1 }
                 }
+            }
+            Text {
+                text: "Для телефона / Shorts / Reels: 1080×1920 (вертикально, 9:16)"
+                color: theme.muted
+                font.family: "monospace"
+                font.pixelSize: 10 * root.uiFontScale / 100
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
             }
             Text { text: "ЧАСТОТА КАДРОВ"; color: theme.muted; font.family: "monospace" }
             ComboBox {
@@ -1895,7 +1918,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Text { text: "ПРЕДПРОСМОТР"; color: theme.accent; font.family: "monospace"; font.bold: true }
                         Item { Layout.fillWidth: true }
-                        Text { text: "16:9 · 1080p"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                        Text { text: root.projectAspectLabel(); color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                     }
                     Rectangle {
                         Layout.fillWidth: true
