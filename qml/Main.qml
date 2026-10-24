@@ -1574,6 +1574,24 @@ ApplicationWindow {
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
                             visible: true
+                            opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
+                            transform: [
+                                Translate {
+                                    x: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "x", 0)
+                                    y: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "y", 0)
+                                },
+                                Scale {
+                                    xScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
+                                    yScale: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "scale", 100) / 100
+                                    origin.x: videoOutput.width / 2
+                                    origin.y: videoOutput.height / 2
+                                },
+                                Rotation {
+                                    angle: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "rotation", 0)
+                                    origin.x: videoOutput.width / 2
+                                    origin.y: videoOutput.height / 2
+                                }
+                            ]
                             z: 0
                         }
 
@@ -1586,35 +1604,63 @@ ApplicationWindow {
                             asynchronous: true
                             cache: true
                             visible: root.timelineImageActive && root.timelinePreviewActive
+                            opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
+                            transform: [
+                                Translate {
+                                    x: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "x", 0)
+                                    y: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "y", 0)
+                                },
+                                Scale {
+                                    xScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
+                                    yScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
+                                    origin.x: timelineImagePreview.width / 2
+                                    origin.y: timelineImagePreview.height / 2
+                                },
+                                Rotation {
+                                    angle: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0)
+                                    origin.x: timelineImagePreview.width / 2
+                                    origin.y: timelineImagePreview.height / 2
+                                }
+                            ]
                             z: 1
                         }
 
                         Text {
                             id: timelineTextOverlay
                             anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 36
+                            anchors.verticalCenter: parent.verticalCenter
                             width: parent.width * 0.86
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.WordWrap
-                            color: "white"
+                            color: root.timelineTextAt(root.timelinePosition)
+                                ? String(root.timelineTextAt(root.timelinePosition).textColor || "#ffffff") : "#ffffff"
                             style: Text.Outline
                             styleColor: "#111111"
                             font.bold: true
-                            font.pixelSize: 30
+                            font.pixelSize: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "fontSize", 30)
+                            opacity: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "opacity", 100) / 100
+                            transform: [
+                                Translate {
+                                    x: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "x", 0)
+                                    y: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "y", 0)
+                                },
+                                Scale {
+                                    xScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
+                                    yScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
+                                    origin.x: timelineTextOverlay.width / 2
+                                    origin.y: timelineTextOverlay.height / 2
+                                },
+                                Rotation {
+                                    angle: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "rotation", 0)
+                                    origin.x: timelineTextOverlay.width / 2
+                                    origin.y: timelineTextOverlay.height / 2
+                                }
+                            ]
                             z: 5
-                            text: {
-                                var activeText = root.mediaFiles.filter(function(item) {
-                                    return item.kind === "text"
-                                        && Number(item.track) >= 0
-                                        && Number(item.start || 0) <= root.timelinePosition
-                                        && Number(item.start || 0) + root.timelineClipDuration(item) > root.timelinePosition
-                                })
-                                return activeText.length ? String(activeText[activeText.length - 1].text || "") : ""
-                            }
+                            text: root.timelineTextAt(root.timelinePosition)
+                                ? String(root.timelineTextAt(root.timelinePosition).text || "") : ""
                             visible: text !== "" && root.timelinePreviewActive
                         }
-
                         Rectangle {
                             anchors.fill: parent
                             visible: !mediaPlayer.hasVideo && !root.timelineImageActive
@@ -1693,14 +1739,99 @@ ApplicationWindow {
                     Text { text: "СВОЙСТВА"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     Text { text: root.selectedMedia === "" ? "Файл не выбран" : root.selectedMedia; color: theme.text; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100); wrapMode: Text.Wrap }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                    Text { text: "ПОЗИЦИЯ И МАСШТАБ"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
-                    Repeater {
-                        model: [["X", "0.0"], ["Y", "0.0"], ["Масштаб", "100%"], ["Поворот", "0°"]]
-                        delegate: RowLayout {
-                            required property var modelData
+                    Text { text: "ПОЗИЦИЯ · МАСШТАБ · ПОВОРОТ"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                    Text { text: root.selectedTimelineClip ? root.selectedTimelineClip.name : "Выбери клип на таймлайне"; color: theme.text; font.family: "monospace"; font.pixelSize: 11; wrapMode: Text.WordWrap }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 6
+                        rowSpacing: 4
+                        Text { text: "X"; color: theme.text; font.family: "monospace" }
+                        SpinBox {
                             Layout.fillWidth: true
-                            Text { text: modelData[0]; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100); Layout.fillWidth: true }
-                            Text { text: modelData[1]; color: theme.accent; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                            from: -1920; to: 1920; editable: true
+                            value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "x", 0))
+                            enabled: !!root.selectedTimelineClip
+                            onValueModified: root.setSelectedClipProperty("x", value)
+                        }
+                        Text { text: "Y"; color: theme.text; font.family: "monospace" }
+                        SpinBox {
+                            Layout.fillWidth: true
+                            from: -1080; to: 1080; editable: true
+                            value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "y", 0))
+                            enabled: !!root.selectedTimelineClip
+                            onValueModified: root.setSelectedClipProperty("y", value)
+                        }
+                        Text { text: "Масштаб %"; color: theme.text; font.family: "monospace" }
+                        SpinBox {
+                            Layout.fillWidth: true
+                            from: 10; to: 300; editable: true
+                            value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "scale", 100))
+                            enabled: !!root.selectedTimelineClip
+                            onValueModified: root.setSelectedClipProperty("scale", value)
+                        }
+                        Text { text: "Поворот °"; color: theme.text; font.family: "monospace" }
+                        SpinBox {
+                            Layout.fillWidth: true
+                            from: -180; to: 180; editable: true
+                            value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "rotation", 0))
+                            enabled: !!root.selectedTimelineClip
+                            onValueModified: root.setSelectedClipProperty("rotation", value)
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: "Непрозрачность"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 10; to: 100; stepSize: 5
+                            value: root.timelineClipProperty(root.selectedTimelineClip, "opacity", 100)
+                            enabled: !!root.selectedTimelineClip
+                            onMoved: root.setSelectedClipProperty("opacity", Math.round(value))
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: !!root.selectedTimelineClip
+                        Text { text: "Громкость %"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0; to: 100; stepSize: 5
+                            value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
+                            onMoved: root.setSelectedClipProperty("volume", Math.round(value))
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: !!root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
+                        Text { text: "ТЕКСТ · ОФОРМЛЕНИЕ"; color: theme.muted; font.family: "monospace"; font.pixelSize: 11 }
+                        TextField {
+                            Layout.fillWidth: true
+                            text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
+                                ? String(root.selectedTimelineClip.text || "") : ""
+                            placeholderText: "Текст титра"
+                            onEditingFinished: root.setSelectedClipProperty("text", text)
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Размер"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                            SpinBox {
+                                from: 8; to: 180; editable: true
+                                value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "fontSize", 30))
+                                onValueModified: root.setSelectedClipProperty("fontSize", value)
+                            }
+                        }
+                        TextField {
+                            Layout.fillWidth: true
+                            text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
+                                ? String(root.selectedTimelineClip.textColor || "#ffffff") : "#ffffff"
+                            placeholderText: "Цвет, например #ffffff"
+                            onEditingFinished: {
+                                if (/^#[0-9a-fA-F]{6}$/.test(text))
+                                    root.setSelectedClipProperty("textColor", text)
+                                else
+                                    root.statusMessage = "Цвет укажи в формате #RRGGBB"
+                            }
                         }
                     }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
