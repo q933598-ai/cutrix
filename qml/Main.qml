@@ -522,6 +522,7 @@ ApplicationWindow {
             source.name = fileNameFromUrl(url)
             source.kind = metadata.kind && metadata.kind !== "unknown"
                 ? metadata.kind : (source.kind && source.kind !== "unknown" ? source.kind : root.mediaKindFromUrl(url))
+            source.hasAudio = metadata.hasAudio !== undefined ? Boolean(metadata.hasAudio) : (source.kind === "audio")
             source.duration = Number(metadata.duration) > 0 ? Number(metadata.duration) : Number(source.duration || 0)
             source.missing = !metadata.exists && anyMatchIndex < 0
             source.track = -1
@@ -864,8 +865,9 @@ ApplicationWindow {
     Instantiator {
         id: timelineAudioPlayers
         model: root.mediaFiles.filter(function(item) {
-            return (item.kind === "audio" || item.kind === "video")
-                && (Number(item.track) === 2 || Number(item.track) === 3)
+            var track = Number(item.track)
+            return (item.kind === "audio" && (track === 2 || track === 3))
+                || (item.kind === "video" && track >= 0 && track <= 3 && item.hasAudio !== false)
         })
         delegate: MediaPlayer {
             required property var modelData
@@ -921,7 +923,11 @@ ApplicationWindow {
         id: mediaPlayer
         source: root.timelinePreviewActive ? root.timelinePreviewUrl : root.selectedMediaUrl
         videoOutput: videoOutput
-        audioOutput: AudioOutput {}
+        audioOutput: AudioOutput {
+            volume: !root.timelinePreviewActive ? 1.0
+                : (timelinePlaybackTimer.running ? 0.0
+                   : root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "volume", 100) / 100)
+        }
         onPlaybackStateChanged: root.isPlaying = playbackState === MediaPlayer.PlayingState
         onErrorOccurred: function(error, errorString) {
             root.playbackError = errorString
