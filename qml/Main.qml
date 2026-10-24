@@ -19,6 +19,10 @@ ApplicationWindow {
     property string selectedMedia: ""
     property string selectedTimelineClipId: ""
     readonly property var selectedTimelineClip: timelineClipById(selectedTimelineClipId)
+    readonly property bool selectedClipCanTransform: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "text"
+            || ((selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
+                && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
     property string mediaSearch: ""
     property string exportErrorDetail: ""
     property string exportOutputPath: ""
@@ -1891,7 +1895,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             from: 10; to: 100; stepSize: 5
                             value: root.timelineClipProperty(root.selectedTimelineClip, "opacity", 100)
-                            enabled: !!root.selectedTimelineClip
+                            enabled: root.selectedClipCanTransform
                             onMoved: root.setSelectedClipProperty("opacity", Math.round(value))
                         }
                     }
