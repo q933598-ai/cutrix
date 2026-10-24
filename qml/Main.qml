@@ -319,7 +319,7 @@ ApplicationWindow {
     function resetSelectedClipTransform() {
         if (!selectedTimelineClip) return
         var defaults = {
-            x: 0, y: 0, scale: 100, rotation: 0,
+            x: 0, y: 0, scale: 100, zoomMode: "none", zoomAmount: 150, rotation: 0,
             opacity: 100, brightness: 0, contrast: 0, saturation: 0
         }
         for (var key in defaults)
