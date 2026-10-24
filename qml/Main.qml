@@ -81,7 +81,6 @@ ApplicationWindow {
     property real timelineSeekPending: -1
     property int timelineClipSerial: 0
     property string contextMenuClipId: ""
-    property real contextMenuTimelinePosition: 0
     // Temporary transform values update the preview every frame and are saved
     // to the project only when the user releases a transform handle.
     property var transformPreviewOverride: ({})
@@ -2757,7 +2756,6 @@ ApplicationWindow {
                                             property real dragStartClipX: 0
                                             property real dragStartClipY: 2
                                             property bool draggingClip: false
-                                            property bool rightClickPending: false
 
                                             property string resizingEdge: ""
                                             property real resizeAnchorX: 0
@@ -2851,18 +2849,11 @@ ApplicationWindow {
                                             z: draggingClip ? 10 : 1
                                             MouseArea {
                                                 anchors.fill: parent
-                                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                                acceptedButtons: Qt.LeftButton
                                                 preventStealing: true
                                                 cursorShape: pressed && mouseButtons === Qt.LeftButton
                                                     ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
-                                                    rightClickPending = mouse.button === Qt.RightButton
-                                                    if (rightClickPending) {
-                                                        root.contextMenuClipId = String(timelineClip.modelData.clipId || "")
-                                                        root.contextMenuTimelinePosition = root.timelinePosition
-                                                        mouse.accepted = true
-                                                        return
-                                                    }
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
@@ -2893,17 +2884,6 @@ ApplicationWindow {
                                                     timelineClip.dragOffsetY = previewY - 2
                                                 }
                                                 onReleased: function(mouse) {
-                                                    // QML's release event may not reliably preserve mouse.button
-                                                    // after a popup interaction; remember the initiating press.
-                                                    if (rightClickPending || mouse.button === Qt.RightButton) {
-                                                        rightClickPending = false
-                                                        // Guard against any other timeline handler moving the playhead.
-                                                        root.timelinePosition = root.contextMenuTimelinePosition
-                                                        root.updateTimelinePreview(root.timelinePosition)
-                                                        timelineClipContextMenu.popup()
-                                                        mouse.accepted = true
-                                                        return
-                                                    }
                                                     var wasDragging = draggingClip
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     var draggedX = timelineClip.x
@@ -2913,8 +2893,7 @@ ApplicationWindow {
                                                     if (!wasDragging) {
                                                          root.selectedTimelineClipId = String(timelineClip.modelData.clipId || "")
                                                          root.selectedMedia = String(timelineClip.modelData.name || "")
-                                                         root.timelinePosition = Number(timelineClip.modelData.start || 0)
-                                                         root.updateTimelinePreview(root.timelinePosition)
+                                                         // Selecting a clip must not seek the playhead to its start.
                                                          return
                                                      }
 
@@ -2951,6 +2930,20 @@ ApplicationWindow {
                                                     root.mediaFiles = updated
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
+                                                }
+                                            }
+                                            // Handle right-click separately from the left-button drag/select area.
+                                            // This prevents context-menu clicks from entering the clip's seek/drag handler.
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                z: 20
+                                                acceptedButtons: Qt.RightButton
+                                                preventStealing: true
+                                                onClicked: {
+                                                    root.contextMenuClipId = String(timelineClip.modelData.clipId || "")
+                                                    root.contextMenuTimelinePosition = root.timelinePosition
+                                                    root.selectedTimelineClipId = root.contextMenuClipId
+                                                    timelineClipContextMenu.popup()
                                                 }
                                             }
                                              Rectangle {
