@@ -17,6 +17,9 @@ ApplicationWindow {
 
     property string currentTheme: projectStore.savedTheme()
     property string selectedMedia: ""
+    property string selectedTimelineClipId: ""
+    readonly property var selectedTimelineClip: timelineClipById(selectedTimelineClipId)
+    property string mediaSearch: ""
     property var mediaFiles: []
     property bool isPlaying: false
     property string playbackError: ""
@@ -90,7 +93,41 @@ ApplicationWindow {
         var track = Math.max(0, Math.min(4, Number(requestedTrack)))
         if (kind === "audio") return track === 3 ? 3 : 2
         if (kind === "text") return 4
+        if (kind === "video" && (track === 2 || track === 3)) return track
         return track === 0 || track === 1 ? track : 1
+    }
+
+    function timelineClipProperty(item, key, fallback) {
+        if (!item || item[key] === undefined || item[key] === null || item[key] === "")
+            return fallback
+        var value = Number(item[key])
+        return isFinite(value) ? value : fallback
+    }
+
+    function timelineTextAt(seconds) {
+        var active = mediaFiles.filter(function(item) {
+            return item.kind === "text" && Number(item.track) >= 0
+                && Number(item.start || 0) <= seconds
+                && Number(item.start || 0) + timelineClipDuration(item) > seconds
+        })
+        active.sort(function(a, b) { return Number(a.track) - Number(b.track) })
+        return active.length ? active[active.length - 1] : null
+    }
+
+    function setSelectedClipProperty(key, value) {
+        var id = String(selectedTimelineClipId || "")
+        if (id === "") return
+        var updated = mediaFiles.slice()
+        for (var i = 0; i < updated.length; ++i) {
+            if (Number(updated[i].track) >= 0 && String(updated[i].clipId || "") === id) {
+                updated[i] = Object.assign({}, updated[i])
+                updated[i][key] = value
+                mediaFiles = updated
+                saveTimelineMedia(updated)
+                statusMessage = "Свойство клипа обновлено"
+                return
+            }
+        }
     }
 
     function timelineClipById(id) {
@@ -413,45 +450,74 @@ ApplicationWindow {
     onCurrentThemeChanged: projectStore.saveAppearance(currentTheme, uiFontScale)
     onUiFontScaleChanged: projectStore.saveAppearance(currentTheme, uiFontScale)
 
+    function normalizedMediaUrl(value) {
+        var url = String(value || "").trim()
+        if (url.indexOf("file://") === 0) {
+            url = url.substring(7)
+            try { url = decodeURIComponent(url) } catch (e) {}
+            return url
+        }
+        try { return decodeURIComponent(url) } catch (e) { return url }
+    }
+
     function fileNameFromUrl(url) {
-        var value = String(url)
-        var slash = value.lastIndexOf("/")
-        return decodeURIComponent(value.substring(slash + 1))
+        var value = normalizedMediaUrl(url)
+        return value.substring(value.lastIndexOf("/") + 1)
     }
 
     function importSelectedFiles(urls) {
         var updated = root.mediaFiles.slice()
         var added = 0
+        var duplicates = 0
+        var firstImportedName = ""
         for (var i = 0; i < urls.length; ++i) {
             var url = urls[i].toString()
-            var exists = false
+            var normalizedUrl = normalizedMediaUrl(url)
+            var sourceIndex = -1
+            var anyMatchIndex = -1
             for (var j = 0; j < updated.length; ++j) {
-                if (updated[j].url === url) { exists = true; break }
+                if (normalizedMediaUrl(updated[j].url) !== normalizedUrl) continue
+                if (anyMatchIndex < 0) anyMatchIndex = j
+                if (Number(updated[j].track) < 0) { sourceIndex = j; break }
             }
-            if (!exists) {
-                var metadata = mediaTools.inspect(url)
-                updated.push({
-                    url: url,
-                    name: fileNameFromUrl(url),
-                    kind: metadata.kind || "unknown",
-                    duration: metadata.duration || 0,
-                    missing: !metadata.exists,
-                    track: -1,
-                    start: 0
-                })
-                ++added
+            if (sourceIndex >= 0) {
+                duplicates += 1
+                if (firstImportedName === "") firstImportedName = String(updated[sourceIndex].name || fileNameFromUrl(url))
+                continue
             }
+            var metadata = mediaTools.inspect(url)
+            var source = anyMatchIndex >= 0 ? Object.assign({}, updated[anyMatchIndex]) : {}
+            source.url = url
+            source.name = fileNameFromUrl(url)
+            source.kind = metadata.kind && metadata.kind !== "unknown" ? metadata.kind : (source.kind || "unknown")
+            source.duration = Number(metadata.duration) > 0 ? Number(metadata.duration) : Number(source.duration || 0)
+            source.missing = !metadata.exists && anyMatchIndex < 0
+            source.track = -1
+            source.start = 0
+            delete source.clipId
+            delete source.x
+            delete source.y
+            delete source.scale
+            delete source.rotation
+            delete source.opacity
+            delete source.fontSize
+            delete source.textColor
+            updated.push(source)
+            added += 1
+            if (firstImportedName === "") firstImportedName = source.name
         }
         root.mediaFiles = updated
-        if (root.currentProjectPath !== "")
-            projectStore.saveProjectMedia(root.currentProjectPath, updated)
-        if (updated.length > 0 && root.selectedMedia === "")
-            root.selectedMedia = updated[0].name
+        if (root.currentProjectPath !== "") projectStore.saveProjectMedia(root.currentProjectPath, updated)
+        root.mediaSearch = ""
+        if (firstImportedName !== "") root.selectedMedia = firstImportedName
+        mediaFlickable.contentY = 0
+        var count = root.mediaFiles.filter(function(item) {
+            return item.track === undefined || Number(item.track) < 0
+        }).length
         root.statusMessage = added > 0
-            ? "Импортировано файлов: " + added + " · всего в медиатеке: " + updated.length
-            : "Выбранные файлы уже есть в медиатеке"
+            ? "Импортировано: " + added + (duplicates > 0 ? " · уже были: " + duplicates : "") + " · в медиатеке: " + count
+            : "Все выбранные файлы уже есть в медиатеке"
     }
-
     // Pixel-style client title bar: Niri does not always provide native decorations.
     header: Rectangle {
         implicitHeight: 42
@@ -1288,6 +1354,8 @@ ApplicationWindow {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (modelData[1] === "Настройки") settingsDialog.open()
+                                    else if (modelData[1] === "Текст") textClipDialog.open()
+                                    else if (modelData[1] === "Аудио") importDialog.open()
                                     else root.statusMessage = modelData[1] + " — раздел пока в разработке"
                                 }
                             }
@@ -1310,29 +1378,47 @@ ApplicationWindow {
                     spacing: 8
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
+                        id: mediaSearchField
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
                         Layout.maximumWidth: mediaPanel.width - 18
                         placeholderText: "Поиск медиа…"
+                        text: root.mediaSearch
+                        onTextChanged: root.mediaSearch = text
                         color: theme.text
                         placeholderTextColor: theme.muted
                         background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                     }
-                    Button {
-                        text: "+ Импортировать"
+                    RowLayout {
                         Layout.fillWidth: true
-                        Layout.minimumWidth: 0
-                        Layout.maximumWidth: mediaPanel.width - 18
-                        Layout.preferredHeight: 34
-                        leftPadding: 5
-                        rightPadding: 5
-                        font.family: "monospace"
-                        font.pixelSize: 11
-                        onClicked: importDialog.open()
-                        palette.buttonText: theme.text
-                        background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
+                        spacing: 5
+                        Button {
+                            text: "+ Импорт"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredHeight: 34
+                            leftPadding: 4
+                            rightPadding: 4
+                            font.family: "monospace"
+                            font.pixelSize: 11
+                            onClicked: importDialog.open()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
+                        }
+                        Button {
+                            text: "+ Текст"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredHeight: 34
+                            font.family: "monospace"
+                            font.pixelSize: 11
+                            onClicked: textClipDialog.open()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.accent2; radius: 2 }
+                        }
                     }
                     Flickable {
+                        id: mediaFlickable
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         contentWidth: width
@@ -1346,12 +1432,15 @@ ApplicationWindow {
                             columnSpacing: 5
                             rowSpacing: 5
                             Repeater {
-                                model: root.mediaFiles
+                                model: root.mediaFiles.filter(function(item) {
+                                    return (item.track === undefined || Number(item.track) < 0)
+                                        && String(item.name || "").toLowerCase().indexOf(root.mediaSearch.toLowerCase()) !== -1
+                                })
                                 delegate: Rectangle {
                                     id: mediaCard
                                     required property var modelData
-                                    Layout.preferredWidth: Math.max(0, (mediaGrid.width - 10) / 3)
-                                    Layout.maximumWidth: Math.max(0, (mediaGrid.width - 10) / 3)
+                                    Layout.preferredWidth: Math.max(1, (mediaGrid.width - (mediaGrid.columns - 1) * mediaGrid.columnSpacing) / mediaGrid.columns)
+                                    Layout.maximumWidth: Math.max(1, (mediaGrid.width - (mediaGrid.columns - 1) * mediaGrid.columnSpacing) / mediaGrid.columns)
                                     Layout.minimumWidth: 0
                                     Layout.preferredHeight: 68
                                 clip: true
@@ -1439,8 +1528,11 @@ ApplicationWindow {
                         }
                             Text {
                                 Layout.fillWidth: true
-                                visible: root.mediaFiles.length === 0
-                                text: "Медиатека пуста. Импортируй файлы, затем перетащи их на дорожку."
+                                visible: root.mediaFiles.filter(function(item) {
+                                    return (item.track === undefined || Number(item.track) < 0)
+                                        && String(item.name || "").toLowerCase().indexOf(root.mediaSearch.toLowerCase()) !== -1
+                                }).length === 0
+                                text: root.mediaSearch === "" ? "Медиатека пуста. Импортируй файлы, затем перетащи их на дорожку." : "По запросу ничего не найдено."
                                 color: theme.muted
                                 font.family: "monospace"
                                 font.pixelSize: 12
