@@ -253,7 +253,7 @@ ApplicationWindow {
         var sticker = {
             clipId: createTimelineClipId(),
             name: "Стикер: " + String(preset.name || preset.glyph || "8-bit"),
-            text: String(preset.glyph || "★"),
+            text: String(preset.art || preset.glyph || "★"),
             url: "",
             kind: "text",
             sticker: true,
@@ -263,7 +263,7 @@ ApplicationWindow {
             x: 0, y: 0, scale: 100,
             zoomMode: "none", zoomAmount: 150, reverse: false,
             rotation: 0, opacity: 100, volume: 100,
-            fontSize: String(preset.glyph || "").length > 3 ? 40 : 58,
+            fontSize: preset.art ? 22 : (String(preset.glyph || "").length > 3 ? 40 : 58),
             fontFamily: "Monospace",
             textColor: String(preset.color || "#f6c177")
         }
@@ -1679,14 +1679,19 @@ ApplicationWindow {
                 columnSpacing: 6
                 Repeater {
                     model: [
-                        { glyph: "★", name: "Звезда", color: "#f6c177" },
-                        { glyph: "♥", name: "Сердце", color: "#eb6f92" },
-                        { glyph: "⚡", name: "Молния", color: "#f6c177" },
+                        { glyph: "★", name: "Звезда", color: "#f6c177",
+                          art: "  ■  \\n ■■■ \\n■■■■■\\n ■■■ \\n  ■  " },
+                        { glyph: "♥", name: "Сердце", color: "#eb6f92",
+                          art: " ■ ■ \\n■■■■■\\n■■■■■\\n ■■■ \\n  ■  " },
+                        { glyph: "⚡", name: "Молния", color: "#f6c177",
+                          art: "   ■ \\n  ■■ \\n ■■■■\\n   ■ \\n  ■  \\n ■■  " },
                         { glyph: "GG", name: "GG", color: "#9ccfd8" },
                         { glyph: "LOL", name: "LOL", color: "#c4a7e7" },
                         { glyph: "+100", name: "+100", color: "#9ccfd8" },
-                        { glyph: "☠", name: "Череп", color: "#e0def4" },
-                        { glyph: "◆", name: "Алмаз", color: "#9ccfd8" },
+                        { glyph: "☠", name: "Череп", color: "#e0def4",
+                          art: " ■■■ \\n■ ■ ■\\n■■■■■\\n ■■■ \\n  ■  " },
+                        { glyph: "◆", name: "Алмаз", color: "#9ccfd8",
+                          art: "  ■  \\n ■■■ \\n■■■■■\\n ■■■ \\n  ■  " },
                         { glyph: "8-BIT", name: "8-BIT", color: "#f6c177" },
                         { glyph: "WIN", name: "Победа", color: "#a3be8c" },
                         { glyph: "!!!", name: "Вау", color: "#eb6f92" },
