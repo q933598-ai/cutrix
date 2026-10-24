@@ -334,8 +334,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         filters << QStringLiteral("color=c=black@0:s=%1x%2:r=%3:d=%4,format=rgba,"
                                  "drawtext=textfile='%5':font='%6':fontcolor=%7:fontsize=%8:borderw=3:"
                                  "bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:alpha=%9,"
-                                 "rotate=%9:ow=rotw(iw):oh=roth(ih):c=black@0,"
-                                 "setpts=PTS-STARTPTS+%10/TB[%11]")
+                                 "rotate=%10:ow=rotw(iw):oh=roth(ih):c=black@0,"
+                                 "setpts=PTS-STARTPTS+%11/TB[%12]")
                        .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
                        .arg(number(clip.duration)).arg(escapeFilterPath(textPath))
                        .arg(clip.fontFamily).arg(clip.textColor).arg(scaledFontSize)
