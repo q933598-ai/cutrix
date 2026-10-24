@@ -1812,10 +1812,18 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 color: theme.panel
                 border.color: theme.border
-                ColumnLayout {
+                Flickable {
                     anchors.fill: parent
-                    anchors.margins: 9
-                    spacing: 9
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    contentWidth: width
+                    contentHeight: inspectorColumn.implicitHeight + 18
+                    ColumnLayout {
+                        id: inspectorColumn
+                        width: parent.width - 18
+                        x: 9
+                        y: 9
+                        spacing: 9
                     Text { text: "СВОЙСТВА"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     Text { text: root.selectedMedia === "" ? "Файл не выбран" : root.selectedMedia; color: theme.text; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100); wrapMode: Text.Wrap }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
@@ -1925,7 +1933,7 @@ ApplicationWindow {
                             Slider { Layout.fillWidth: true; from: -1; to: 1; value: 0 }
                         }
                     }
-                    Item { Layout.fillHeight: true }
+                    Item { Layout.preferredHeight: 8 }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text { text: "ЭКСПОРТ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     Text { text: "MP4 · H.264 · " + root.currentProjectResolution + " · " + root.currentProjectFps + " FPS"; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
@@ -1939,6 +1947,7 @@ ApplicationWindow {
                         palette.buttonText: "#101522"
                         background: Rectangle { color: theme.accent; border.color: theme.accent; radius: 2 }
                     }
+                }
                 }
             }
         }
