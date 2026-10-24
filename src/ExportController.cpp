@@ -170,6 +170,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.track = track;
         clip.start = qMax(0.0, item.value(QStringLiteral("start")).toDouble());
         clip.duration = clipDuration(item);
+        clip.sourceOffset = qMax(0.0, item.value(QStringLiteral("sourceOffset")).toDouble());
         clip.x = boundedItemValue(item, QStringLiteral("x"), 0.0, -7680.0, 7680.0);
         clip.y = boundedItemValue(item, QStringLiteral("y"), 0.0, -4320.0, 4320.0);
         clip.scale = boundedItemValue(item, QStringLiteral("scale"), 100.0, 10.0, 300.0);
@@ -180,6 +181,10 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.contrast = boundedItemValue(item, QStringLiteral("contrast"), 0.0, -1.0, 1.0);
         clip.saturation = boundedItemValue(item, QStringLiteral("saturation"), 0.0, -1.0, 1.0);
         clip.fontSize = boundedItemValue(item, QStringLiteral("fontSize"), 42.0, 8.0, 180.0);
+        const QString requestedFont = item.value(QStringLiteral("fontFamily"), QStringLiteral("Sans")).toString();
+        const QStringList supportedFonts = { QStringLiteral("Sans"), QStringLiteral("Serif"),
+            QStringLiteral("Monospace"), QStringLiteral("DejaVu Sans"), QStringLiteral("CozetteVector") };
+        clip.fontFamily = supportedFonts.contains(requestedFont) ? requestedFont : QStringLiteral("Sans");
         clip.textColor = ffmpegFontColor(item.value(QStringLiteral("textColor"), QStringLiteral("#ffffff")).toString());
         if (!std::isfinite(clip.start) || !std::isfinite(clip.duration) || clip.duration <= 0.0)
             continue;
@@ -241,6 +246,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                             << QStringLiteral("-t") << number(clip.duration)
                             << QStringLiteral("-i") << clip.path;
         } else {
+            if (clip.sourceOffset > 0.0)
+                m_baseArguments << QStringLiteral("-ss") << number(clip.sourceOffset);
             m_baseArguments << QStringLiteral("-i") << clip.path;
         }
     }
@@ -325,13 +332,14 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const QString label = QStringLiteral("title%1").arg(titleSerial);
         const QString titleSource = QStringLiteral("titlesrc%1").arg(titleSerial);
         filters << QStringLiteral("color=c=black@0:s=%1x%2:r=%3:d=%4,format=rgba,"
-                                 "drawtext=textfile='%5':fontcolor=%6:fontsize=%7:borderw=3:"
-                                 "bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:alpha=%8,"
+                                 "drawtext=textfile='%5':font='%6':fontcolor=%7:fontsize=%8:borderw=3:"
+                                 "bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:alpha=%9,"
                                  "rotate=%9:ow=rotw(iw):oh=roth(ih):c=black@0,"
                                  "setpts=PTS-STARTPTS+%10/TB[%11]")
                        .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
                        .arg(number(clip.duration)).arg(escapeFilterPath(textPath))
-                       .arg(clip.textColor).arg(scaledFontSize).arg(number(clip.opacity / 100.0))
+                       .arg(clip.fontFamily).arg(clip.textColor).arg(scaledFontSize)
+                       .arg(number(clip.opacity / 100.0))
                        .arg(angle).arg(number(clip.start)).arg(titleSource);
         filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
                                  "eof_action=pass:shortest=0:repeatlast=0:enable='between(t,%5,%6)'[%7]")
