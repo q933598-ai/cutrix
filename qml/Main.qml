@@ -1182,7 +1182,7 @@ ApplicationWindow {
         title: "Импортировать медиа в Cutrix"
         fileMode: FileDialog.OpenFiles
         nameFilters: [
-            "Медиафайлы (*.mp4 *.mov *.mkv *.webm *.avi *.mp3 *.wav *.flac *.ogg *.png *.jpg *.jpeg *.webp)",
+            "Медиафайлы (*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.mpeg *.mpg *.ts *.mts *.mp3 *.wav *.flac *.ogg *.opus *.m4a *.aac *.aiff *.aif *.wma *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)",
             "Все файлы (*)"
         ]
         onAccepted: root.importSelectedFiles(selectedFiles)
