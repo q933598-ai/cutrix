@@ -1883,7 +1883,7 @@ ApplicationWindow {
                                 var elapsed = Math.max(0, Number(root.timelinePosition)
                                     - Number(clip.start || 0))
                                 elapsed = Math.floor(elapsed * 2) / 2
-                                return mediaTools.thumbnailAt(clip.url, elapsed)
+                                return mediaTools.previewFrameAt(clip.url, elapsed)
                             }
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
