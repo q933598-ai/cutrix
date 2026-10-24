@@ -2887,6 +2887,9 @@ ApplicationWindow {
                                                     timelineClip.dragOffsetY = previewY - 2
                                                 }
                                                 onReleased: function(mouse) {
+                                                    // Right-click opens the context menu; it must not trigger
+                                                    // the normal click behavior that seeks to the clip start.
+                                                    if (mouse.button === Qt.RightButton) return
                                                     var wasDragging = draggingClip
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     var draggedX = timelineClip.x
