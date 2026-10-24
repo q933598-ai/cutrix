@@ -14,11 +14,14 @@ int main(int argc, char *argv[])
     if (qEnvironmentVariableIsEmpty("QSG_RHI_BACKEND"))
         qputenv("QSG_RHI_BACKEND", "opengl");
 
-    // Ask Qt Multimedia's FFmpeg backend to prefer NVDEC/CUDA on NVIDIA,
-    // then VA-API where available. Qt can still use software decoding when
-    // a requested hardware backend or codec is unavailable. Users may override.
+    // Qt Multimedia's FFmpeg backend can fail to fall back to software
+    // decoding for AV1 when CUDA/NVDEC is selected on GPUs without AV1 decode
+    // support (for example, NVIDIA GeForce RTX 20-series). Use software
+    // decoding by default for reliable playback. Users can explicitly opt in
+    // to hardware decoding with QT_FFMPEG_DECODING_HW_DEVICE_TYPES=cuda,vaapi.
+    // This does not affect FFmpeg export encoding (NVENC remains available).
     if (qEnvironmentVariableIsEmpty("QT_FFMPEG_DECODING_HW_DEVICE_TYPES"))
-        qputenv("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", "cuda,vaapi");
+        qputenv("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", ",");
 
     QApplication app(argc, argv);
 
