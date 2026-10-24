@@ -42,6 +42,8 @@ private:
         double x = 0.0;
         double y = 0.0;
         double scale = 100.0;
+        QString zoomMode = QStringLiteral("none");
+        double zoomAmount = 150.0;
         double rotation = 0.0;
         double opacity = 100.0;
         double volume = 100.0;
