@@ -437,6 +437,51 @@ ApplicationWindow {
         return candidates[0]
     }
 
+    function splitSelectedTimelineClip() {
+        var id = String(selectedTimelineClipId || "")
+        if (id === "") {
+            statusMessage = "Сначала выбери клип на таймлайне"
+            return
+        }
+        var updated = mediaFiles.slice()
+        var index = -1
+        for (var i = 0; i < updated.length; ++i) {
+            if (Number(updated[i].track) >= 0 && String(updated[i].clipId || "") === id) {
+                index = i
+                break
+            }
+        }
+        if (index < 0) {
+            statusMessage = "Выбранный клип не найден"
+            return
+        }
+        var original = Object.assign({}, updated[index])
+        var start = Math.max(0, Number(original.start || 0))
+        var duration = timelineClipDuration(original)
+        var end = start + duration
+        var cutAt = Number(timelinePosition)
+        if (!isFinite(cutAt) || cutAt <= start + 0.05 || cutAt >= end - 0.05) {
+            statusMessage = "Поставь курсор внутрь клипа, чтобы разрезать его"
+            return
+        }
+        var leftDuration = cutAt - start
+        var rightDuration = end - cutAt
+        original.duration = leftDuration
+        updated[index] = original
+        var rightClip = Object.assign({}, original, {
+            clipId: createTimelineClipId(),
+            start: cutAt,
+            duration: rightDuration,
+            sourceOffset: Math.max(0, Number(original.sourceOffset || 0)) + leftDuration
+        })
+        updated.splice(index + 1, 0, rightClip)
+        mediaFiles = updated
+        selectedTimelineClipId = String(rightClip.clipId)
+        saveTimelineMedia(updated)
+        updateTimelinePreview(timelinePosition)
+        statusMessage = "Клип разрезан по курсору"
+    }
+
     function removeTimelineClip(clipId) {
         var id = String(clipId || "")
         if (id === "") return
@@ -499,7 +544,7 @@ ApplicationWindow {
         var url = String(clip.url || "")
         var clipId = String(clip.clipId || "")
         var clipStart = Number(clip.start || 0)
-        var offset = Math.max(0, seconds - clipStart)
+        var offset = Math.max(0, Number(clip.sourceOffset || 0) + seconds - clipStart)
 
         // A still image on the upper track overlays the lower video, but must
         // not replace its decoder: otherwise the underlying video's audio dies.
@@ -520,7 +565,7 @@ ApplicationWindow {
             var footageUrl = String(footage.url || "")
             var footageId = String(footage.clipId || "")
             var footageStart = Number(footage.start || 0)
-            var footageOffset = Math.max(0, seconds - footageStart)
+            var footageOffset = Math.max(0, Number(footage.sourceOffset || 0) + seconds - footageStart)
             if (footageUrl !== String(timelinePreviewUrl)
                     || footageId !== String(timelinePreviewClipId)
                     || footageStart !== timelinePreviewClipStart) {
@@ -824,6 +869,7 @@ ApplicationWindow {
         }
         Menu {
             title: "Правка"
+            Action { text: "Разрезать клип по курсору"; enabled: !!root.selectedTimelineClip; onTriggered: root.splitSelectedTimelineClip() }
             Action { text: "Отменить (скоро)"; onTriggered: root.statusMessage = "История действий появится позже" }
             Action { text: "Повторить (скоро)"; onTriggered: root.statusMessage = "История действий появится позже" }
         }
@@ -839,6 +885,13 @@ ApplicationWindow {
 
     Menu {
         id: timelineClipContextMenu
+        MenuItem {
+            text: "Разрезать по курсору"
+            onTriggered: {
+                root.selectedTimelineClipId = root.contextMenuClipId
+                root.splitSelectedTimelineClip()
+            }
+        }
         MenuItem {
             text: "Удалить клип с дорожки"
             onTriggered: root.removeTimelineClip(root.contextMenuClipId)
@@ -1124,6 +1177,18 @@ ApplicationWindow {
         }
     }
 
+    ColorDialog {
+        id: textColorDialog
+        title: "Цвет текста"
+        onAccepted: {
+            var value = String(selectedColor).toLowerCase()
+            if (/^#[0-9a-f]{6}$/.test(value))
+                root.setSelectedClipProperty("textColor", value)
+            else
+                root.statusMessage = "Не удалось прочитать выбранный цвет"
+        }
+    }
+
     Dialog {
         id: textClipDialog
         parent: Overlay.overlay
@@ -1154,7 +1219,7 @@ ApplicationWindow {
                 duration: duration,
                 x: 0, y: 0, scale: 100,
                 rotation: 0, opacity: 100, volume: 100,
-                fontSize: 30, textColor: "#ffffff"
+                fontSize: 30, fontFamily: "Sans", textColor: "#ffffff"
             })
             root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
             root.mediaFiles = updated
@@ -1977,6 +2042,8 @@ ApplicationWindow {
                             style: Text.Outline
                             styleColor: "#111111"
                             font.bold: true
+                            font.family: root.timelineTextAt(root.timelinePosition)
+                                ? String(root.timelineTextAt(root.timelinePosition).fontFamily || "Sans") : "Sans"
                             font.pixelSize: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "fontSize", 30)
                             opacity: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
@@ -2439,6 +2506,34 @@ ApplicationWindow {
                                 }
                                 value: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "fontSize", 30))
                                 onValueModified: root.setSelectedClipProperty("fontSize", value)
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Шрифт"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                            ComboBox {
+                                Layout.fillWidth: true
+                                model: ["Sans", "Serif", "Monospace", "DejaVu Sans", "CozetteVector"]
+                                currentIndex: Math.max(0, model.indexOf(String(root.selectedTimelineClip && root.selectedTimelineClip.fontFamily || "Sans")))
+                                palette.text: theme.text
+                                background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                                onActivated: root.setSelectedClipProperty("fontFamily", currentText)
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Button {
+                                text: "Выбрать цвет…"
+                                onClicked: {
+                                    textColorDialog.selectedColor = root.selectedTimelineClip
+                                        ? String(root.selectedTimelineClip.textColor || "#ffffff") : "#ffffff"
+                                    textColorDialog.open()
+                                }
+                            }
+                            Rectangle {
+                                width: 24; height: 24
+                                color: root.selectedTimelineClip ? String(root.selectedTimelineClip.textColor || "#ffffff") : "#ffffff"
+                                border.color: theme.border
                             }
                         }
                         TextField {
