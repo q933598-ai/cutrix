@@ -7,6 +7,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QMutexLocker>
 #include <QRunnable>
 #include <QStandardPaths>
@@ -40,6 +41,15 @@ MediaTools::MediaTools(QObject *parent) : QObject(parent)
 {
     m_thumbnailPool.setMaxThreadCount(2);
     m_thumbnailPool.setExpiryTimeout(30000);
+    connect(&m_transcriptionProcess, &QProcess::finished, this,
+            [this](int exitCode, QProcess::ExitStatus status) {
+        handleTranscriptionFinished(exitCode, status);
+    });
+    connect(&m_transcriptionProcess, &QProcess::errorOccurred, this,
+            [this](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart && m_transcriptionRunning)
+            failTranscription(QStringLiteral("Не удалось запустить Whisper. Проверь установку whisper-cli."));
+    });
 }
 
 QVariantMap MediaTools::inspect(const QString &url) const
@@ -171,4 +181,202 @@ QString MediaTools::thumbnailAtSize(const QString &url, double seconds, int maxW
         }, Qt::QueuedConnection);
     }));
     return {};
+}
+
+
+void MediaTools::setTranscriptionRunning(bool running)
+{
+    if (m_transcriptionRunning == running) return;
+    m_transcriptionRunning = running;
+    emit transcriptionRunningChanged();
+}
+
+void MediaTools::failTranscription(const QString &message)
+{
+    m_transcriptionStage.clear();
+    setTranscriptionRunning(false);
+    emit transcriptionFailed(message);
+}
+
+bool MediaTools::startTranscription(const QString &mediaUrl, const QString &modelPath,
+                                    double sourceOffset, double duration)
+{
+    if (m_transcriptionRunning) {
+        emit transcriptionFailed(QStringLiteral("Распознавание уже выполняется."));
+        return false;
+    }
+
+    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    m_whisperExecutable = QStandardPaths::findExecutable(QStringLiteral("whisper-cli"));
+    if (m_whisperExecutable.isEmpty()) {
+        emit transcriptionFailed(QStringLiteral("Не найден whisper-cli. Установи whisper.cpp и повтори попытку."));
+        return false;
+    }
+    if (ffmpeg.isEmpty()) {
+        emit transcriptionFailed(QStringLiteral("Для подготовки аудио нужен FFmpeg (команда ffmpeg)."));
+        return false;
+    }
+
+    const QString inputPath = localPath(mediaUrl);
+    const QString resolvedModelPath = localPath(modelPath);
+    if (!QFileInfo(inputPath).isFile()) {
+        emit transcriptionFailed(QStringLiteral("Исходный аудио- или видеофайл не найден."));
+        return false;
+    }
+    if (!QFileInfo(resolvedModelPath).isFile()) {
+        emit transcriptionFailed(QStringLiteral("Файл модели Whisper не найден. Выбери модель .bin."));
+        return false;
+    }
+    if (!std::isfinite(sourceOffset) || sourceOffset < 0.0
+            || !std::isfinite(duration) || duration <= 0.0) {
+        emit transcriptionFailed(QStringLiteral("Не удалось определить длительность выбранного клипа."));
+        return false;
+    }
+
+    const QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cacheDir = cacheRoot + QStringLiteral("/transcription");
+    if (cacheRoot.isEmpty() || !QDir().mkpath(cacheDir)) {
+        emit transcriptionFailed(QStringLiteral("Не удалось создать папку для временного аудио."));
+        return false;
+    }
+
+    const QFileInfo inputInfo(inputPath);
+    const QByteArray cacheKey = QCryptographicHash::hash(
+        (inputInfo.absoluteFilePath() + QLatin1Char('|')
+         + QString::number(inputInfo.lastModified().toSecsSinceEpoch()) + QLatin1Char('|')
+         + QString::number(sourceOffset, 'f', 3) + QLatin1Char('|')
+         + QString::number(duration, 'f', 3) + QLatin1Char('|')
+         + resolvedModelPath).toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString stem = cacheDir + QLatin1Char('/') + QString::fromLatin1(cacheKey);
+    m_transcriptionWavPath = stem + QStringLiteral(".wav");
+    m_transcriptionSrtPath = stem + QStringLiteral(".srt");
+    QFile::remove(m_transcriptionWavPath);
+    QFile::remove(m_transcriptionSrtPath);
+    m_transcriptionModelPath = resolvedModelPath;
+    m_transcriptionPrefix = stem;
+    m_transcriptionStage = QStringLiteral("extract");
+    m_transcriptionFfmpeg = ffmpeg;
+    m_transcriptionSourceOffset = sourceOffset;
+    m_transcriptionDuration = duration;
+
+    m_transcriptionProcess.setProgram(ffmpeg);
+    m_transcriptionProcess.setArguments({
+        QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+        QStringLiteral("-y"), QStringLiteral("-ss"), QString::number(sourceOffset, 'f', 3),
+        QStringLiteral("-i"), inputPath, QStringLiteral("-t"), QString::number(duration, 'f', 3),
+        QStringLiteral("-vn"), QStringLiteral("-ac"), QStringLiteral("1"),
+        QStringLiteral("-ar"), QStringLiteral("16000"), QStringLiteral("-c:a"),
+        QStringLiteral("pcm_s16le"), m_transcriptionWavPath
+    });
+    setTranscriptionRunning(true);
+    m_transcriptionProcess.start();
+    return true;
+}
+
+void MediaTools::handleTranscriptionFinished(int exitCode, QProcess::ExitStatus status)
+{
+    if (!m_transcriptionRunning) return;
+    if (status != QProcess::NormalExit || exitCode != 0) {
+        const QString details = QString::fromLocal8Bit(m_transcriptionProcess.readAllStandardError()).trimmed();
+        failTranscription(details.isEmpty()
+            ? QStringLiteral("Не удалось обработать аудио. Проверь FFmpeg и формат файла.")
+            : QStringLiteral("Ошибка распознавания: ") + details.left(500));
+        return;
+    }
+
+    if (m_transcriptionStage == QStringLiteral("extract")) {
+        if (!QFileInfo::exists(m_transcriptionWavPath)
+                || QFileInfo(m_transcriptionWavPath).size() <= 44) {
+            failTranscription(QStringLiteral("В выбранном фрагменте не удалось извлечь аудио."));
+            return;
+        }
+        startWhisperProcess();
+        return;
+    }
+
+    if (m_transcriptionStage == QStringLiteral("recognize")) {
+        parseTranscriptionResult();
+        return;
+    }
+
+    failTranscription(QStringLiteral("Неизвестное состояние распознавания."));
+}
+
+void MediaTools::startWhisperProcess()
+{
+    m_transcriptionStage = QStringLiteral("recognize");
+    QFile::remove(m_transcriptionSrtPath);
+    m_transcriptionProcess.setProgram(m_whisperExecutable);
+    m_transcriptionProcess.setArguments({
+        QStringLiteral("-m"), m_transcriptionModelPath,
+        QStringLiteral("-f"), m_transcriptionWavPath,
+        QStringLiteral("-osrt"),
+        QStringLiteral("-of"), m_transcriptionPrefix
+    });
+    m_transcriptionProcess.start();
+}
+
+void MediaTools::parseTranscriptionResult()
+{
+    QFile file(m_transcriptionSrtPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        failTranscription(QStringLiteral("Whisper завершился без SRT-файла. Проверь выбранную модель."));
+        return;
+    }
+    const QString contents = QString::fromUtf8(file.readAll());
+    file.close();
+
+    const QRegularExpression blockSeparator(QStringLiteral("\\\\r?\\\\n\\\\s*\\\\r?\\\\n"));
+    const QRegularExpression timestamp(
+        QStringLiteral(R"((\d{2,}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2,}):(\d{2}):(\d{2})[,.](\d{3}))"));
+    const QRegularExpression tags(QStringLiteral("<[^>]*>"));
+    QVariantList segments;
+    const QStringList blocks = contents.split(blockSeparator, Qt::SkipEmptyParts);
+
+    auto toSeconds = [](const QRegularExpressionMatch &match, int offset) {
+        return match.captured(offset).toDouble() * 3600.0
+            + match.captured(offset + 1).toDouble() * 60.0
+            + match.captured(offset + 2).toDouble()
+            + match.captured(offset + 3).toDouble() / 1000.0;
+    };
+
+    for (const QString &block : blocks) {
+        const QStringList lines = block.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        int timestampLine = -1;
+        QRegularExpressionMatch match;
+        for (int i = 0; i < lines.size(); ++i) {
+            const auto candidate = timestamp.match(lines.at(i).trimmed());
+            if (candidate.hasMatch()) {
+                timestampLine = i;
+                match = candidate;
+                break;
+            }
+        }
+        if (timestampLine < 0) continue;
+        QStringList textLines;
+        for (int i = timestampLine + 1; i < lines.size(); ++i) {
+            QString line = lines.at(i).trimmed();
+            line.remove(tags);
+            if (!line.isEmpty()) textLines.push_back(line);
+        }
+        const QString text = textLines.join(QLatin1Char(' ')).simplified();
+        const double start = toSeconds(match, 1);
+        const double end = toSeconds(match, 5);
+        if (text.isEmpty() || !std::isfinite(start) || !std::isfinite(end) || end <= start)
+            continue;
+        QVariantMap item;
+        item.insert(QStringLiteral("start"), start);
+        item.insert(QStringLiteral("end"), end);
+        item.insert(QStringLiteral("text"), text);
+        segments.push_back(item);
+    }
+
+    QFile::remove(m_transcriptionWavPath);
+    if (segments.isEmpty()) {
+        failTranscription(QStringLiteral("Whisper не распознал речь в выбранном клипе."));
+        return;
+    }
+    m_transcriptionStage.clear();
+    setTranscriptionRunning(false);
+    emit transcriptionFinished(segments);
 }
