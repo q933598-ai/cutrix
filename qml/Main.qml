@@ -486,6 +486,16 @@ ApplicationWindow {
         return value.substring(value.lastIndexOf("/") + 1)
     }
 
+    function mediaKindFromUrl(url) {
+        var name = fileNameFromUrl(url).toLowerCase()
+        var dot = name.lastIndexOf(".")
+        var ext = dot >= 0 ? name.substring(dot + 1) : ""
+        if (["png","jpg","jpeg","webp","bmp","gif","tif","tiff"].indexOf(ext) >= 0) return "image"
+        if (["mp3","wav","flac","ogg","opus","m4a","aac","aiff","aif","wma"].indexOf(ext) >= 0) return "audio"
+        if (["mp4","mov","mkv","webm","avi","m4v","mpeg","mpg","ts","mts"].indexOf(ext) >= 0) return "video"
+        return "unknown"
+    }
+
     function importSelectedFiles(urls) {
         var updated = root.mediaFiles.slice()
         var added = 0
@@ -510,7 +520,8 @@ ApplicationWindow {
             var source = anyMatchIndex >= 0 ? Object.assign({}, updated[anyMatchIndex]) : {}
             source.url = url
             source.name = fileNameFromUrl(url)
-            source.kind = metadata.kind && metadata.kind !== "unknown" ? metadata.kind : (source.kind || "unknown")
+            source.kind = metadata.kind && metadata.kind !== "unknown"
+                ? metadata.kind : (source.kind && source.kind !== "unknown" ? source.kind : root.mediaKindFromUrl(url))
             source.duration = Number(metadata.duration) > 0 ? Number(metadata.duration) : Number(source.duration || 0)
             source.missing = !metadata.exists && anyMatchIndex < 0
             source.track = -1
