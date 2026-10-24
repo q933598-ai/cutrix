@@ -2688,7 +2688,9 @@ ApplicationWindow {
                             id: videoOutput
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
-                            visible: !root.timelinePreviewActive || root.timelineImageActive
+                            visible: !root.timelinePreviewActive
+                                || (root.timelineImageActive
+                                    && root.timelineFootageAt(root.timelinePosition) !== null)
                                 || (timelinePlaybackTimer.running
                                     && mediaPlayer.playbackState === MediaPlayer.PlayingState)
                             opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
