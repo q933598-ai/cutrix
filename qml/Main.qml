@@ -2468,11 +2468,17 @@ ApplicationWindow {
                     Text { text: "Миниатюры видео создаются через FFmpeg; для аудио показана карточка файла."; color: theme.muted; font.family: "monospace"; font.pixelSize: (11 * root.uiFontScale / 100); wrapMode: Text.WordWrap }
                 }
 
-                ColumnLayout {
+                ScrollView {
+                    id: effectsScroll
                     anchors.fill: parent
-                    anchors.margins: 9
-                    spacing: 10
                     visible: root.activeSidebarSection === "Эффекты"
+                    clip: true
+                    contentWidth: availableWidth
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    ColumnLayout {
+                        x: 9
+                        width: Math.max(1, effectsScroll.availableWidth - 18)
+                        spacing: 10
                     Text {
                         text: "ЭФФЕКТЫ КЛИПА"
                         color: theme.accent
@@ -2638,6 +2644,7 @@ ApplicationWindow {
                         wrapMode: Text.WordWrap
                     }
                     Item { Layout.fillHeight: true }
+                    }
                 }
             }
 
