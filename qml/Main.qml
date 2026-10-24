@@ -21,6 +21,7 @@ ApplicationWindow {
     readonly property var selectedTimelineClip: timelineClipById(selectedTimelineClipId)
     property string mediaSearch: ""
     property string exportErrorDetail: ""
+    property string exportOutputPath: ""
     property var mediaFiles: []
     property bool isPlaying: false
     property string playbackError: ""
@@ -1212,9 +1213,11 @@ ApplicationWindow {
             root.statusMessage = "Экспорт: " + Math.round(exportController.progress * 100) + "%"
         }
         function onExportFinished(outputPath, usedHardwareEncoder) {
+            root.exportOutputPath = String(outputPath || "")
             root.statusMessage = usedHardwareEncoder
                 ? "Экспорт готов · NVIDIA NVENC"
                 : "Экспорт готов · CPU (libx264)"
+            exportCompleteDialog.open()
         }
         function onExportFailed(message) {
             root.exportErrorDetail = String(message || "Неизвестная ошибка FFmpeg")
@@ -1238,6 +1241,34 @@ ApplicationWindow {
                 readOnly: true
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
+                color: theme.text
+                background: Rectangle { color: theme.background; border.color: theme.border }
+            }
+        }
+        background: Rectangle { color: theme.panel; border.color: theme.accent; radius: 0 }
+    }
+
+    Dialog {
+        id: exportCompleteDialog
+        title: "Экспорт завершён"
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(620, root.width - 48)
+        standardButtons: Dialog.Ok
+        contentItem: ColumnLayout {
+            spacing: 8
+            Text {
+                Layout.fillWidth: true
+                text: "Видео сохранено в:"
+                color: theme.text
+                font.family: "monospace"
+            }
+            TextArea {
+                Layout.fillWidth: true
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                text: root.exportOutputPath
                 color: theme.text
                 background: Rectangle { color: theme.background; border.color: theme.border }
             }
