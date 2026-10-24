@@ -178,6 +178,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         if (clip.zoomMode != QStringLiteral("in") && clip.zoomMode != QStringLiteral("out"))
             clip.zoomMode = QStringLiteral("none");
         clip.zoomAmount = boundedItemValue(item, QStringLiteral("zoomAmount"), 150.0, 110.0, 250.0);
+        clip.reverse = item.value(QStringLiteral("reverse"), false).toBool();
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
         clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
@@ -289,6 +290,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const QString label = QStringLiteral("visual%1").arg(visualSerial);
         const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
         QString zoomFilter;
+        if (clip.reverse)
+            zoomFilter = QStringLiteral("reverse,");
         if (clip.zoomMode == QStringLiteral("in") || clip.zoomMode == QStringLiteral("out")) {
             const QString amount = number(clip.zoomAmount / 100.0);
             const QString progress = QStringLiteral("min(on/(%1*%2),1)")
@@ -296,9 +299,9 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             const QString zoomExpression = clip.zoomMode == QStringLiteral("in")
                 ? QStringLiteral("1+(%1-1)*%2").arg(amount, progress)
                 : QStringLiteral("%1-(%1-1)*%2").arg(amount, progress);
-            zoomFilter = QStringLiteral("fps=%1,zoompan=z='%2':x='iw/2-(iw/zoom/2)':"
-                                        "y='ih/2-(ih/zoom/2)':d=1:s=%3x%4:fps=%1,")
-                             .arg(m_outputFps).arg(zoomExpression).arg(scaledWidth).arg(scaledHeight);
+            zoomFilter += QStringLiteral("fps=%1,zoompan=z='%2':x='iw/2-(iw/zoom/2)':"
+                                         "y='ih/2-(ih/zoom/2)':d=1:s=%3x%4:fps=%1,")
+                              .arg(m_outputFps).arg(zoomExpression).arg(scaledWidth).arg(scaledHeight);
         }
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
@@ -374,9 +377,10 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             continue;
         const QString label = QStringLiteral("audio%1").arg(audioSerial);
         const int delay = qMax(0, qRound(clip.start * 1000.0));
-        filters << QStringLiteral("[%1:a:0]atrim=duration=%2,asetpts=PTS-STARTPTS,aresample=48000,"
-                                 "volume=%3,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=%4|%4[%5]")
-                       .arg(clip.inputIndex).arg(number(clip.duration))
+        const QString reverseAudio = clip.reverse ? QStringLiteral("areverse,") : QString();
+        filters << QStringLiteral("[%1:a:0]atrim=duration=%2,asetpts=PTS-STARTPTS,%3aresample=48000,"
+                                 "volume=%4,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=%5|%5[%6]")
+                       .arg(clip.inputIndex).arg(number(clip.duration)).arg(reverseAudio)
                        .arg(number(clip.volume / 100.0)).arg(delay).arg(label);
         audioLabels << QStringLiteral("[%1]").arg(label);
         ++audioSerial;
