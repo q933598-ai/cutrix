@@ -196,7 +196,7 @@ ApplicationWindow {
     }
 
     function previewHasSelectedTransformClip() {
-        if (!selectedClipCanTransform || !timelinePreviewActive) return false
+        if (!selectedClipCanTransform || !timelinePreviewActive || timelinePlaybackTimer.running) return false
         if (selectedTimelineClip.kind === "text") {
             var title = timelineTextAt(timelinePosition)
             return !!title && String(title.clipId || "") === String(selectedTimelineClipId)
@@ -2110,6 +2110,79 @@ ApplicationWindow {
                                         onReleased: root.commitTransformGesture()
                                         onCanceled: root.commitTransformGesture()
                                     }
+                                }
+                            }
+
+                            // Viewport-pinned handles remain reachable at high zoom.
+                            Repeater {
+                                model: [
+                                    { horizontal: -1, vertical: -1 },
+                                    { horizontal:  1, vertical: -1 },
+                                    { horizontal: -1, vertical:  1 },
+                                    { horizontal:  1, vertical:  1 }
+                                ]
+                                delegate: Rectangle {
+                                    id: viewportScaleHandle
+                                    required property var modelData
+                                    property point targetPoint: transformBounds.mapToItem(
+                                        transformOverlay,
+                                        modelData.horizontal < 0 ? 0 : transformBounds.width,
+                                        modelData.vertical < 0 ? 0 : transformBounds.height)
+                                    width: 14
+                                    height: 14
+                                    radius: 2
+                                    x: Math.max(0, Math.min(parent.width - width, targetPoint.x - width / 2))
+                                    y: Math.max(0, Math.min(parent.height - height, targetPoint.y - height / 2))
+                                    color: theme.text
+                                    border.color: theme.accent
+                                    z: 6
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: viewportScaleHandle.modelData.horizontal
+                                            === viewportScaleHandle.modelData.vertical
+                                            ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+                                        onPressed: function(mouse) {
+                                            var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                            root.beginTransformGesture("scale", point.x, point.y)
+                                        }
+                                        onPositionChanged: function(mouse) {
+                                            if (!pressed) return
+                                            var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                            root.updateTransformGesture("scale", point.x, point.y)
+                                        }
+                                        onReleased: root.commitTransformGesture()
+                                        onCanceled: root.commitTransformGesture()
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                id: viewportRotateHandle
+                                property point targetPoint: transformBounds.mapToItem(
+                                    transformOverlay, transformBounds.width / 2, 0)
+                                width: 12
+                                height: 22
+                                x: Math.max(0, Math.min(parent.width - width, targetPoint.x - width / 2))
+                                y: Math.max(4, Math.min(parent.height - height, targetPoint.y - height - 6))
+                                color: theme.accent
+                                border.color: theme.background
+                                radius: 2
+                                z: 7
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.CrossCursor
+                                    onPressed: function(mouse) {
+                                        var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                        root.beginTransformGesture("rotate", point.x, point.y)
+                                    }
+                                    onPositionChanged: function(mouse) {
+                                        if (!pressed) return
+                                        var point = mapToItem(previewCanvas, mouse.x, mouse.y)
+                                        root.updateTransformGesture("rotate", point.x, point.y)
+                                    }
+                                    onReleased: root.commitTransformGesture()
+                                    onCanceled: root.commitTransformGesture()
                                 }
                             }
                         }
