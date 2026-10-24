@@ -20,11 +20,13 @@ public:
     Q_INVOKABLE QVariantMap inspect(const QString &url) const;
     Q_INVOKABLE QString thumbnail(const QString &url);
     Q_INVOKABLE QString thumbnailAt(const QString &url, double seconds);
+    Q_INVOKABLE QString previewFrameAt(const QString &url, double seconds);
 
 signals:
     void thumbnailRevisionChanged();
 
 private:
+    QString thumbnailAtSize(const QString &url, double seconds, int maxWidth);
     mutable QMutex m_thumbnailMutex;
     QSet<QString> m_pendingThumbnails;
     QSet<QString> m_failedThumbnails;
