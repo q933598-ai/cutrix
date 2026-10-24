@@ -11,6 +11,7 @@
 #include <QRunnable>
 #include <QStandardPaths>
 #include <QUrl>
+#include <cmath>
 
 namespace {
 QString localPath(const QString &value)
