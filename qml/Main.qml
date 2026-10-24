@@ -454,6 +454,37 @@ ApplicationWindow {
         return timelineClipProperty(item, "y", 0) * previewHeight / projectFrameHeight()
     }
 
+    // Use the actually painted media rectangle rather than the whole project
+    // canvas, so transform handles line up when a landscape clip is fitted
+    // inside a vertical Shorts project (and vice versa).
+    function previewVisualBaseWidth(item) {
+        if (item && item.kind === "image") {
+            var imageSize = timelineImagePreview.sourceSize
+            if (imageSize.width > 0 && imageSize.height > 0)
+                return imageSize.width * Math.min(previewCanvas.width / imageSize.width,
+                                                  previewCanvas.height / imageSize.height)
+        } else if (item && item.kind === "video") {
+            var videoRect = videoOutput.contentRect
+            if (videoRect.width > 0 && videoRect.height > 0)
+                return videoRect.width
+        }
+        return previewCanvas.width
+    }
+
+    function previewVisualBaseHeight(item) {
+        if (item && item.kind === "image") {
+            var imageSize = timelineImagePreview.sourceSize
+            if (imageSize.width > 0 && imageSize.height > 0)
+                return imageSize.height * Math.min(previewCanvas.width / imageSize.width,
+                                                   previewCanvas.height / imageSize.height)
+        } else if (item && item.kind === "video") {
+            var videoRect = videoOutput.contentRect
+            if (videoRect.width > 0 && videoRect.height > 0)
+                return videoRect.height
+        }
+        return previewCanvas.height
+    }
+
     function timelineTextAt(seconds) {
         var active = mediaFiles.filter(function(item) {
             return item.kind === "text" && Number(item.track) >= 0
@@ -519,8 +550,8 @@ ApplicationWindow {
         if (!item || !previewCanvas || previewCanvas.width <= 0 || previewCanvas.height <= 0)
             return false
         var textTarget = item.kind === "text"
-        var baseWidth = textTarget ? timelineTextOverlay.width : previewCanvas.width
-        var baseHeight = textTarget ? Math.max(32, timelineTextOverlay.height) : previewCanvas.height
+        var baseWidth = textTarget ? timelineTextOverlay.width : previewVisualBaseWidth(item)
+        var baseHeight = textTarget ? Math.max(32, timelineTextOverlay.height) : previewVisualBaseHeight(item)
         var scale = (textTarget
             ? timelineClipProperty(item, "scale", 100)
             : timelineClipScaleAt(item, timelinePosition)) / 100
@@ -1680,18 +1711,18 @@ ApplicationWindow {
                 Repeater {
                     model: [
                         { glyph: "★", name: "Звезда", color: "#f6c177",
-                          art: "  ■  \\n ■■■ \\n■■■■■\\n ■■■ \\n  ■  " },
+                          art: "  ■  \n ■■■ \n■■■■■\n ■■■ \n  ■  " },
                         { glyph: "♥", name: "Сердце", color: "#eb6f92",
-                          art: " ■ ■ \\n■■■■■\\n■■■■■\\n ■■■ \\n  ■  " },
+                          art: " ■ ■ \n■■■■■\n■■■■■\n ■■■ \n  ■  " },
                         { glyph: "⚡", name: "Молния", color: "#f6c177",
-                          art: "   ■ \\n  ■■ \\n ■■■■\\n   ■ \\n  ■  \\n ■■  " },
+                          art: "   ■ \n  ■■ \n ■■■■\n   ■ \n  ■  \n ■■  " },
                         { glyph: "GG", name: "GG", color: "#9ccfd8" },
                         { glyph: "LOL", name: "LOL", color: "#c4a7e7" },
                         { glyph: "+100", name: "+100", color: "#9ccfd8" },
                         { glyph: "☠", name: "Череп", color: "#e0def4",
-                          art: " ■■■ \\n■ ■ ■\\n■■■■■\\n ■■■ \\n  ■  " },
+                          art: " ■■■ \n■ ■ ■\n■■■■■\n ■■■ \n  ■  " },
                         { glyph: "◆", name: "Алмаз", color: "#9ccfd8",
-                          art: "  ■  \\n ■■■ \\n■■■■■\\n ■■■ \\n  ■  " },
+                          art: "  ■  \n ■■■ \n■■■■■\n ■■■ \n  ■  " },
                         { glyph: "8-BIT", name: "8-BIT", color: "#f6c177" },
                         { glyph: "WIN", name: "Победа", color: "#a3be8c" },
                         { glyph: "!!!", name: "Вау", color: "#eb6f92" },
@@ -2751,8 +2782,8 @@ ApplicationWindow {
                             opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Scale {
-                                    xScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
-                                    yScale: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "scale", 100) / 100
+                                    xScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
+                                    yScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
                                     origin.x: timelineImagePreview.width / 2
                                     origin.y: timelineImagePreview.height / 2
                                 },
@@ -2832,8 +2863,8 @@ ApplicationWindow {
                             property var targetClip: root.selectedTimelineClip
                             readonly property bool titleTarget: targetClip && targetClip.kind === "text"
                             readonly property real targetScale: root.timelineClipScaleAt(targetClip, root.timelinePosition) / 100
-                            readonly property real baseWidth: titleTarget ? timelineTextOverlay.width : previewCanvas.width
-                            readonly property real baseHeight: titleTarget ? Math.max(32, timelineTextOverlay.height) : previewCanvas.height
+                            readonly property real baseWidth: titleTarget ? timelineTextOverlay.width : root.previewVisualBaseWidth(targetClip)
+                            readonly property real baseHeight: titleTarget ? Math.max(32, timelineTextOverlay.height) : root.previewVisualBaseHeight(targetClip)
 
                             Item {
                                 id: transformBounds
