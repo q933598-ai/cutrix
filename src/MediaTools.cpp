@@ -60,20 +60,26 @@ QVariantMap MediaTools::inspect(const QString &url) const
     bool durationOk = false;
     bool hasVideo = false;
     bool hasAudio = false;
+    bool sawStreamType = false;
     double duration = 0.0;
-    const QStringList probeLines = probeOutput.split(QLatin1Char('\\n'), Qt::SkipEmptyParts);
+    const QStringList probeLines = probeOutput.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     for (const QString &line : probeLines) {
-        if (line == QStringLiteral("codec_type=video"))
+        if (line == QStringLiteral("codec_type=video")) {
             hasVideo = true;
-        else if (line == QStringLiteral("codec_type=audio"))
+            sawStreamType = true;
+        } else if (line == QStringLiteral("codec_type=audio")) {
             hasAudio = true;
-        else if (line.startsWith(QStringLiteral("duration="))) {
+            sawStreamType = true;
+        } else if (line.startsWith(QStringLiteral("duration="))) {
             duration = line.mid(QStringLiteral("duration=").size()).toDouble(&durationOk);
         }
     }
     if (durationOk && std::isfinite(duration) && duration >= 0.0)
         result.insert("duration", duration);
-    result.insert("hasAudio", hasAudio);
+    // Do not mark a video as silent when ffprobe was unavailable or failed.
+    // Only publish hasAudio when stream information was actually read.
+    if (sawStreamType)
+        result.insert("hasAudio", hasAudio);
 
     const QString suffix = info.suffix().toLower();
     if (QStringList{"png","jpg","jpeg","webp","bmp","gif","tif","tiff"}.contains(suffix))
