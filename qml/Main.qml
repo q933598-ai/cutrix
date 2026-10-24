@@ -1142,15 +1142,15 @@ ApplicationWindow {
             title: "Воспроизведение"
             Action { text: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Пауза" : "Воспроизвести"; enabled: root.selectedMediaUrl !== ""; onTriggered: { if (mediaPlayer.playbackState === MediaPlayer.PlayingState) mediaPlayer.pause(); else mediaPlayer.play() } }
         }
-        Shortcut { sequence: "Ctrl+Z"; context: Qt.WindowShortcut; onActivated: root.undoTimelineAction() }
-        Shortcut { sequence: "Ctrl+Shift+Z"; context: Qt.WindowShortcut; onActivated: root.redoTimelineAction() }
-        Shortcut { sequence: "Ctrl+Y"; context: Qt.WindowShortcut; onActivated: root.redoTimelineAction() }
-
         Menu {
             title: "Справка"
             Action { text: "О Cutrix"; onTriggered: aboutDialog.open() }
         }
     }
+
+    Shortcut { sequence: "Ctrl+Z"; context: Qt.WindowShortcut; onActivated: root.undoTimelineAction() }
+    Shortcut { sequence: "Ctrl+Shift+Z"; context: Qt.WindowShortcut; onActivated: root.redoTimelineAction() }
+    Shortcut { sequence: "Ctrl+Y"; context: Qt.WindowShortcut; onActivated: root.redoTimelineAction() }
 
     Menu {
         id: timelineClipContextMenu
@@ -1537,7 +1537,6 @@ ApplicationWindow {
             })
             root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
             root.recordTimelineHistory("Добавить текстовый клип")
-            root.recordTimelineHistory("Добавить клип на таймлайн")
             root.mediaFiles = updated
             root.saveTimelineMedia(updated)
             root.timelinePosition = start
@@ -3555,6 +3554,7 @@ ApplicationWindow {
                                              updated.push(clip)
                                              root.selectedTimelineClipId = String(clip.clipId)
                                              root.selectedMedia = String(clip.name || "")
+                                              root.recordTimelineHistory("Добавить клип на таймлайн")
                                              root.mediaFiles = updated
                                             root.saveTimelineMedia(updated)
                                             root.timelinePosition = start
