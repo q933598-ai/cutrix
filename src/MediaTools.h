@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QObject>
+#include <QProcess>
+#include <QVariantList>
 #include <QVariantMap>
 #include <QString>
 #include <QMutex>
