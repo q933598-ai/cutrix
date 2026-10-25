@@ -2402,15 +2402,26 @@ ApplicationWindow {
                         background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                     }
                     Button {
-                        text: "＋ Импортировать медиа"
+                        id: importMediaButton
+                        text: root.mediaPanelWidth < 245 ? "＋ Импорт" : "＋ Импортировать медиа"
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Layout.preferredHeight: 34
-                        leftPadding: 6
-                        rightPadding: 6
+                        leftPadding: 4
+                        rightPadding: 4
                         font.family: "monospace"
                         font.pixelSize: 11
                         onClicked: importDialog.open()
                         palette.buttonText: theme.text
+                        contentItem: Text {
+                            text: importMediaButton.text
+                            font: importMediaButton.font
+                            color: importMediaButton.palette.buttonText
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
                     }
                     Flickable {
@@ -2573,24 +2584,57 @@ ApplicationWindow {
                         font.pixelSize: 10 * root.uiFontScale / 100
                     }
                     Button {
+                        id: effectZoomInButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "⌕ Приближение · 150%"
+                        contentItem: Text {
+                            text: effectZoomInButton.text
+                            font: effectZoomInButton.font
+                            color: effectZoomInButton.enabled ? effectZoomInButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         enabled: root.selectedClipCanZoom
                         onClicked: root.applyStaticZoom(150)
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
                     }
                     Button {
+                        id: effectZoomOutButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "⌕ Отдаление · 80%"
+                        contentItem: Text {
+                            text: effectZoomOutButton.text
+                            font: effectZoomOutButton.font
+                            color: effectZoomOutButton.enabled ? effectZoomOutButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         enabled: root.selectedClipCanZoom
                         onClicked: root.applyStaticZoom(80)
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                     }
                     Button {
+                        id: effectZoomResetButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "↺ Обычный масштаб · 100%"
+                        contentItem: Text {
+                            text: effectZoomResetButton.text
+                            font: effectZoomResetButton.font
+                            color: effectZoomResetButton.enabled ? effectZoomResetButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         enabled: root.selectedClipCanZoom
                         onClicked: root.applyStaticZoom(100)
                         palette.buttonText: theme.text
@@ -2615,10 +2659,21 @@ ApplicationWindow {
                                 { label: "▤ Выцветание", preset: "fade" }
                             ]
                             delegate: Button {
+                                id: effectPresetButton
                                 required property var modelData
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
                                 Layout.preferredHeight: 32
                                 text: modelData.label
+                                contentItem: Text {
+                                    text: effectPresetButton.text
+                                    font: effectPresetButton.font
+                                    color: effectPresetButton.enabled ? effectPresetButton.palette.buttonText : theme.muted
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                    wrapMode: Text.NoWrap
+                                }
                                 enabled: root.selectedClipCanColorCorrect
                                 font.family: "monospace"
                                 font.pixelSize: 10
@@ -2633,8 +2688,19 @@ ApplicationWindow {
                         }
                     }
                     Button {
+                        id: effectColorResetButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "Сбросить цветовой эффект"
+                        contentItem: Text {
+                            text: effectColorResetButton.text
+                            font: effectColorResetButton.font
+                            color: effectColorResetButton.enabled ? effectColorResetButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         enabled: root.selectedClipCanColorCorrect
                         onClicked: root.applyColorPreset("none")
                         font.family: "monospace"
@@ -2650,11 +2716,22 @@ ApplicationWindow {
                         font.pixelSize: 10 * root.uiFontScale / 100
                     }
                     Button {
+                        id: effectReverseButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: root.selectedTimelineClip && root.selectedTimelineClip.reverse
                             ? "↶ Отключить реверс" : "↶ Реверс видео + звука"
                         enabled: root.selectedClipCanReverse
                         onClicked: root.toggleSelectedClipReverse()
+                        contentItem: Text {
+                            text: effectReverseButton.text
+                            font: effectReverseButton.font
+                            color: effectReverseButton.enabled ? effectReverseButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         palette.buttonText: theme.text
                         background: Rectangle {
                             color: root.selectedTimelineClip && root.selectedTimelineClip.reverse
@@ -2679,8 +2756,19 @@ ApplicationWindow {
                         font.pixelSize: 10 * root.uiFontScale / 100
                     }
                     Button {
+                        id: effectSubtitlesButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: mediaTools.transcriptionRunning ? "Распознавание…" : "♫ Создать субтитры из речи"
+                        contentItem: Text {
+                            text: effectSubtitlesButton.text
+                            font: effectSubtitlesButton.font
+                            color: effectSubtitlesButton.enabled ? effectSubtitlesButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         enabled: root.selectedClipCanTranscribe && !mediaTools.transcriptionRunning
                         onClicked: root.requestAutoSubtitles()
                         palette.buttonText: theme.background
@@ -2697,8 +2785,19 @@ ApplicationWindow {
                         wrapMode: Text.WordWrap
                     }
                     Button {
+                        id: effectChooseModelButton
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "Выбрать модель Whisper (.bin)"
+                        contentItem: Text {
+                            text: effectChooseModelButton.text
+                            font: effectChooseModelButton.font
+                            color: effectChooseModelButton.enabled ? effectChooseModelButton.palette.buttonText : theme.muted
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                        }
                         enabled: !mediaTools.transcriptionRunning
                         onClicked: {
                             root.pendingSubtitleClipId = String(root.selectedTimelineClipId || "")
