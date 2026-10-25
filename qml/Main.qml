@@ -84,6 +84,7 @@ ApplicationWindow {
     // another block of workspace even when the user isn't dragging a clip.
     property real timelineWorkspaceDemand: 0
     property int timelineAutoScrollDirection: 0
+    property real timelineAutoScrollVelocity: 0
     property bool timelinePlayheadDragging: false
     readonly property real timelineWorkspaceDuration:
         timelineWorkspaceForDuration(Math.max(timelineDuration, timelineDragHorizon, timelineWorkspaceDemand))
@@ -151,6 +152,8 @@ ApplicationWindow {
             direction = 1
         else if (viewportPoint.x <= 32 && timelineViewport.contentX > 0)
             direction = -1
+        if (direction === 0 || direction !== timelineAutoScrollDirection)
+            timelineAutoScrollVelocity = 0
         timelineAutoScrollDirection = direction
         var seconds = canvasPoint.x / Math.max(0.001, timelineZoom)
         if (direction > 0) {
@@ -1371,6 +1374,15 @@ ApplicationWindow {
             }
         }
         MenuItem {
+            text: "Сбросить позицию, масштаб и поворот"
+            onTriggered: {
+                root.selectedTimelineClipId = root.contextMenuClipId
+                root.setSelectedClipProperties({
+                    x: 0, y: 0, scale: 100, rotation: 0
+                }, "Сбросить трансформацию")
+            }
+        }
+        MenuItem {
             text: "Удалить клип с дорожки"
             onTriggered: root.removeTimelineClip(root.contextMenuClipId)
         }
@@ -2389,33 +2401,17 @@ ApplicationWindow {
                         placeholderTextColor: theme.muted
                         background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                     }
-                    RowLayout {
+                    Button {
+                        text: "＋ Импортировать медиа"
                         Layout.fillWidth: true
-                        spacing: 5
-                        Button {
-                            text: "+ Импорт"
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 0
-                            Layout.preferredHeight: 34
-                            leftPadding: 4
-                            rightPadding: 4
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            onClicked: importDialog.open()
-                            palette.buttonText: theme.text
-                            background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
-                        }
-                        Button {
-                            text: "+ Текст"
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 0
-                            Layout.preferredHeight: 34
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            onClicked: textClipDialog.open()
-                            palette.buttonText: theme.text
-                            background: Rectangle { color: theme.panelAlt; border.color: theme.accent2; radius: 2 }
-                        }
+                        Layout.preferredHeight: 34
+                        leftPadding: 6
+                        rightPadding: 6
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                        onClicked: importDialog.open()
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
                     }
                     Flickable {
                         id: mediaFlickable
@@ -2725,6 +2721,34 @@ ApplicationWindow {
             }
 
             Rectangle {
+                id: mediaPanelSplitter
+                property real dragStartScreenX: 0
+                property int dragStartPanelWidth: 0
+                Layout.preferredWidth: 6
+                Layout.minimumWidth: 6
+                Layout.maximumWidth: 6
+                Layout.fillHeight: true
+                color: splitterMouseArea.containsMouse || splitterMouseArea.pressed ? theme.accent : theme.border
+                MouseArea {
+                    id: splitterMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeHorCursor
+                    onPressed: function(mouse) {
+                        mediaPanelSplitter.dragStartScreenX = mapToItem(root, mouse.x, mouse.y).x
+                        mediaPanelSplitter.dragStartPanelWidth = root.mediaPanelWidth
+                    }
+                    onPositionChanged: function(mouse) {
+                        if (!pressed) return
+                        var currentX = mapToItem(root, mouse.x, mouse.y).x
+                        root.mediaPanelWidth = Math.max(180, Math.min(440,
+                            Math.round(mediaPanelSplitter.dragStartPanelWidth
+                                + currentX - mediaPanelSplitter.dragStartScreenX)))
+                    }
+                }
+            }
+
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 300
@@ -2936,8 +2960,19 @@ ApplicationWindow {
                             anchors.fill: parent
                             z: 10
                             visible: root.timelinePreviewActive && !timelinePlaybackTimer.running
-                            acceptedButtons: Qt.LeftButton
-                            onClicked: root.selectPreviewElementAt(mouse.x, mouse.y)
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onClicked: function(mouse) {
+                                if (mouse.button === Qt.RightButton) {
+                                    var hitId = root.previewElementAt(mouse.x, mouse.y)
+                                    if (hitId === "") return
+                                    root.contextMenuClipId = hitId
+                                    root.contextMenuTimelinePosition = root.timelinePosition
+                                    root.selectedTimelineClipId = hitId
+                                    timelineClipContextMenu.popup(previewSelectionArea, mouse.x, mouse.y)
+                                } else {
+                                    root.selectPreviewElementAt(mouse.x, mouse.y)
+                                }
+                            }
                         }
 
                         Item {
@@ -3565,21 +3600,47 @@ ApplicationWindow {
                     }
                     Slider {
                         id: timelineZoomSlider
-                        Layout.preferredWidth: 140
-                        Layout.minimumWidth: 80
+                        Layout.preferredWidth: 210
+                        Layout.minimumWidth: 95
+                        Layout.maximumWidth: 270
                         from: 0
                         to: 100
                         stepSize: 0.5
                         value: 100 * Math.log(Math.max(0.05, root.timelineZoom) / 0.05) / Math.log(40 / 0.05)
                         onMoved: root.setTimelineZoom(0.05 * Math.pow(40 / 0.05, value / 100))
+                        background: Rectangle {
+                            x: timelineZoomSlider.leftPadding
+                            y: timelineZoomSlider.topPadding + timelineZoomSlider.availableHeight / 2 - height / 2
+                            width: timelineZoomSlider.availableWidth
+                            height: 4
+                            radius: 2
+                            color: theme.background
+                            border.color: theme.border
+                            Rectangle {
+                                width: timelineZoomSlider.visualPosition * parent.width
+                                height: parent.height
+                                radius: 2
+                                color: theme.accent
+                            }
+                        }
+                        handle: Rectangle {
+                            x: timelineZoomSlider.leftPadding + timelineZoomSlider.visualPosition
+                                * (timelineZoomSlider.availableWidth - width)
+                            y: timelineZoomSlider.topPadding + timelineZoomSlider.availableHeight / 2 - height / 2
+                            width: 12
+                            height: 12
+                            radius: 6
+                            color: timelineZoomSlider.pressed ? theme.accent : theme.text
+                            border.color: theme.accent
+                        }
                     }
-                    Button {
-                        text: "+"
-                        Layout.preferredWidth: 28
-                        Layout.preferredHeight: 26
-                        onClicked: root.setTimelineZoom(root.timelineZoom * 1.15)
-                        palette.buttonText: theme.text
-                        background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                    Text {
+                        text: (root.timelineZoom / 4).toFixed(2) + "×"
+                        Layout.preferredWidth: 48
+                        horizontalAlignment: Text.AlignHCenter
+                        color: theme.accent
+                        font.family: "monospace"
+                        font.pixelSize: 11 * root.uiFontScale / 100
                     }
                     Button {
                         text: "Вписать"
@@ -3602,20 +3663,31 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: 0
-                    Column {
+                    Flickable {
+                        id: timelineTrackLabelsViewport
                         Layout.preferredWidth: 150
+                        Layout.minimumWidth: 120
                         Layout.fillHeight: true
-                        spacing: 3
-                        Item { width: parent.width; height: 22 }
-                        Repeater {
-                            model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
-                            delegate: Rectangle {
-                                required property string modelData
-                                width: parent.width
-                                height: 34
-                                color: theme.panelAlt
-                                border.color: theme.border
-                                Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                        clip: true
+                        contentWidth: width
+                        contentHeight: timelineCanvas.height
+                        contentY: timelineViewport.contentY
+                        interactive: false
+                        Column {
+                            width: timelineTrackLabelsViewport.width
+                            height: timelineCanvas.height
+                            spacing: 3
+                            Item { width: parent.width; height: 22 }
+                            Repeater {
+                                model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
+                                delegate: Rectangle {
+                                    required property string modelData
+                                    width: parent.width
+                                    height: 34
+                                    color: theme.panelAlt
+                                    border.color: theme.border
+                                    Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                                }
                             }
                         }
                     }
@@ -3626,7 +3698,8 @@ ApplicationWindow {
                         clip: true
                         contentWidth: timelineCanvas.width
                         contentHeight: timelineCanvas.height
-                        flickableDirection: Flickable.HorizontalFlick
+                        flickableDirection: Flickable.HorizontalAndVerticalFlick
+                        interactive: !root.timelinePlayheadDragging
                         boundsBehavior: Flickable.StopAtBounds
                         onContentXChanged: {
                             if (width <= 0 || root.timelineZoom <= 0) return
@@ -3639,17 +3712,25 @@ ApplicationWindow {
                         ScrollBar.horizontal: ScrollBar {
                             policy: ScrollBar.AsNeeded
                         }
+                        ScrollBar.vertical: ScrollBar {
+                            policy: ScrollBar.AsNeeded
+                        }
                         WheelHandler {
                             target: null
                             onWheel: function(event) {
                                 if (event.modifiers & Qt.ControlModifier) {
                                     root.setTimelineZoom(root.timelineZoom * (event.angleDelta.y > 0 ? 1.12 : 1 / 1.12))
-                                } else {
-                                    var delta = Math.abs(event.angleDelta.x) > 0
+                                } else if (Math.abs(event.angleDelta.x) > 0
+                                               || (event.modifiers & Qt.ShiftModifier)) {
+                                    var deltaX = Math.abs(event.angleDelta.x) > 0
                                         ? event.angleDelta.x : event.angleDelta.y
                                     var maxX = Math.max(0, timelineCanvas.width - timelineViewport.width)
                                     timelineViewport.contentX = Math.max(0, Math.min(maxX,
-                                        timelineViewport.contentX - delta * 0.5))
+                                        timelineViewport.contentX - deltaX * 0.5))
+                                } else {
+                                    var maxY = Math.max(0, timelineCanvas.height - timelineViewport.height)
+                                    timelineViewport.contentY = Math.max(0, Math.min(maxY,
+                                        timelineViewport.contentY - event.angleDelta.y * 0.5))
                                 }
                                 event.accepted = true
                             }
@@ -3658,7 +3739,7 @@ ApplicationWindow {
                             id: timelineCanvas
                             width: Math.max(timelineViewport.width,
                                 root.timelineWorkspaceDuration * timelineScale)
-                            height: timelineViewport.height
+                            height: Math.max(timelineViewport.height, 22 + 5 * 37 + 8)
                             clip: true
                             // One stable scale is shared by ruler, clip geometry,
                             // dragging, resizing, drop positions and the playhead.
@@ -4056,30 +4137,40 @@ ApplicationWindow {
                             border.color: theme.text
                             z: 11
                             Text { anchors.centerIn: parent; text: "▼"; color: theme.background; font.pixelSize: 9 }
-                            MouseArea {
-                                id: playheadDragArea
-                                anchors.fill: parent
-                                preventStealing: true
-                                cursorShape: pressed ? Qt.SizeHorCursor : Qt.OpenHandCursor
-                                onPressed: function(mouse) {
-                                    root.timelinePlayheadDragging = true
-                                    root.timelineDragHorizon = 0
+                        }
+                        MouseArea {
+                            id: playheadDragArea
+                            x: Math.max(0, Math.min(timelineCanvas.width - width, timelinePlayhead.x - width / 2))
+                            y: 0
+                            width: 26
+                            height: 32
+                            z: 12
+                            acceptedButtons: Qt.LeftButton
+                            preventStealing: true
+                            cursorShape: pressed ? Qt.SizeHorCursor : Qt.OpenHandCursor
+                            onPressed: function(mouse) {
+                                root.timelinePlayheadDragging = true
+                                timelineViewport.interactive = false
+                                root.timelineDragHorizon = 0
+                                root.setPlayheadFromPointer(playheadDragArea, mouse)
+                            }
+                            onPositionChanged: function(mouse) {
+                                if (pressed)
                                     root.setPlayheadFromPointer(playheadDragArea, mouse)
-                                }
-                                onPositionChanged: function(mouse) {
-                                    if (pressed)
-                                        root.setPlayheadFromPointer(playheadDragArea, mouse)
-                                }
-                                onReleased: {
-                                    root.timelinePlayheadDragging = false
-                                    root.timelineAutoScrollDirection = 0
-                                    root.timelineDragHorizon = 0
-                                }
-                                onCanceled: {
-                                    root.timelinePlayheadDragging = false
-                                    root.timelineAutoScrollDirection = 0
-                                    root.timelineDragHorizon = 0
-                                }
+                            }
+                            onReleased: {
+                                root.timelinePlayheadDragging = false
+                                timelineViewport.interactive = true
+                                root.timelineAutoScrollDirection = 0
+                                root.timelineAutoScrollVelocity = 0
+                                root.timelineDragHorizon = 0
+                            }
+                            onCanceled: {
+                                root.timelinePlayheadDragging = false
+                                timelineViewport.interactive = true
+                                root.timelineAutoScrollDirection = 0
+                                root.timelineAutoScrollVelocity = 0
+                                root.timelineDragHorizon = 0
                             }
                         }
                     }
@@ -4101,8 +4192,17 @@ ApplicationWindow {
                 var edgeTime = (timelineViewport.contentX + timelineViewport.width) / root.timelineZoom
                 root.timelineDragHorizon = Math.max(root.timelineDragHorizon, edgeTime + 120)
             }
-            var step = root.timelinePlayheadDragging
-                ? Math.max(0.5, root.timelineZoom * 0.4) : 12
+            var step = 12
+            if (root.timelinePlayheadDragging) {
+                var zoomForSpeed = Math.max(0.1, root.timelineZoom)
+                var maxStep = Math.max(1, Math.min(80, zoomForSpeed * 2.0))
+                root.timelineAutoScrollVelocity = Math.min(maxStep,
+                    Math.max(zoomForSpeed * 0.3,
+                        root.timelineAutoScrollVelocity + Math.max(0.08, zoomForSpeed * 0.05)))
+                step = root.timelineAutoScrollVelocity
+            } else {
+                root.timelineAutoScrollVelocity = 0
+            }
             timelineViewport.contentX = Math.max(0, Math.min(
                 Math.max(0, timelineCanvas.width - timelineViewport.width),
                 timelineViewport.contentX + root.timelineAutoScrollDirection * step))
