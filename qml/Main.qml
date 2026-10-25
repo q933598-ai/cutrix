@@ -84,6 +84,7 @@ ApplicationWindow {
     // another block of workspace even when the user isn't dragging a clip.
     property real timelineWorkspaceDemand: 0
     property int timelineAutoScrollDirection: 0
+    property bool timelinePlayheadDragging: false
     readonly property real timelineWorkspaceDuration:
         timelineWorkspaceForDuration(Math.max(timelineDuration, timelineDragHorizon, timelineWorkspaceDemand))
     // Все элементы таймлайна используют один масштаб, чтобы линейка,
@@ -121,7 +122,9 @@ ApplicationWindow {
     }
 
     function setTimelineZoom(value) {
-        var nextZoom = Math.max(2, Math.min(40, Number(value) || 4))
+        var requestedZoom = Number(value)
+        if (!isFinite(requestedZoom)) requestedZoom = timelineZoom
+        var nextZoom = Math.max(0.05, Math.min(40, requestedZoom))
         var anchorTime = 0
         if (timelineViewport && timelineViewport.width > 0 && timelineZoom > 0)
             anchorTime = (timelineViewport.contentX + timelineViewport.width / 2) / timelineZoom
@@ -135,9 +138,31 @@ ApplicationWindow {
 
     function fitTimelineToProject() {
         var duration = Math.max(1, timelineDuration)
-        var fitZoom = Math.max(2, Math.min(40, Math.max(1, timelineViewport.width) / duration))
+        var fitZoom = Math.max(0.05, Math.min(40, Math.max(1, timelineViewport.width) / duration))
         timelineZoom = fitZoom
         Qt.callLater(function() { timelineViewport.contentX = 0 })
+    }
+
+    function setPlayheadFromPointer(mouseArea, mouse) {
+        var canvasPoint = mouseArea.mapToItem(timelineCanvas, mouse.x, mouse.y)
+        var viewportPoint = mouseArea.mapToItem(timelineViewport, mouse.x, mouse.y)
+        var direction = 0
+        if (viewportPoint.x >= timelineViewport.width - 32)
+            direction = 1
+        else if (viewportPoint.x <= 32 && timelineViewport.contentX > 0)
+            direction = -1
+        timelineAutoScrollDirection = direction
+        var seconds = canvasPoint.x / Math.max(0.001, timelineZoom)
+        if (direction > 0) {
+            seconds = Math.max(seconds,
+                (timelineViewport.contentX + timelineViewport.width - 20) / Math.max(0.001, timelineZoom))
+            timelineDragHorizon = Math.max(timelineDragHorizon, seconds + 120)
+        } else if (direction < 0) {
+            seconds = Math.min(seconds,
+                (timelineViewport.contentX + 20) / Math.max(0.001, timelineZoom))
+        }
+        timelinePosition = Math.max(0, Math.min(timelineWorkspaceDuration, seconds))
+        updateTimelinePreview(timelinePosition)
     }
 
     function keepTimelinePlayheadVisible() {
@@ -3542,9 +3567,9 @@ ApplicationWindow {
                         id: timelineZoomSlider
                         Layout.preferredWidth: 140
                         Layout.minimumWidth: 80
-                        from: 2
+                        from: 0.05
                         to: 40
-                        stepSize: 1
+                        stepSize: 0.05
                         value: root.timelineZoom
                         onMoved: root.setTimelineZoom(value)
                     }
@@ -3618,7 +3643,7 @@ ApplicationWindow {
                             target: null
                             onWheel: function(event) {
                                 if (event.modifiers & Qt.ControlModifier) {
-                                    root.setTimelineZoom(root.timelineZoom + (event.angleDelta.y > 0 ? 1 : -1))
+                                    root.setTimelineZoom(root.timelineZoom * (event.angleDelta.y > 0 ? 1.12 : 1 / 1.12))
                                 } else {
                                     var delta = Math.abs(event.angleDelta.x) > 0
                                         ? event.angleDelta.x : event.angleDelta.y
@@ -4033,20 +4058,26 @@ ApplicationWindow {
                             Text { anchors.centerIn: parent; text: "▼"; color: theme.background; font.pixelSize: 9 }
                             MouseArea {
                                 anchors.fill: parent
-                                cursorShape: Qt.SizeHorCursor
+                                preventStealing: true
+                                cursorShape: pressed ? Qt.SizeHorCursor : Qt.OpenHandCursor
                                 onPressed: function(mouse) {
-                                    var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
-                                    if (root.timelineDuration > 0 && timelineCanvas.width > 0) {
-                                        root.timelinePosition = Math.max(0, Math.min(root.timelineWorkspaceDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale)))
-                                        root.updateTimelinePreview(root.timelinePosition)
-                                    }
+                                    root.timelinePlayheadDragging = true
+                                    root.timelineDragHorizon = 0
+                                    root.setPlayheadFromPointer(this, mouse)
                                 }
                                 onPositionChanged: function(mouse) {
-                                    if (pressed && root.timelineDuration > 0 && timelineCanvas.width > 0) {
-                                        var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
-                                        root.timelinePosition = Math.max(0, Math.min(root.timelineDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale)))
-                                        root.updateTimelinePreview(root.timelinePosition)
-                                    }
+                                    if (pressed)
+                                        root.setPlayheadFromPointer(this, mouse)
+                                }
+                                onReleased: {
+                                    root.timelinePlayheadDragging = false
+                                    root.timelineAutoScrollDirection = 0
+                                    root.timelineDragHorizon = 0
+                                }
+                                onCanceled: {
+                                    root.timelinePlayheadDragging = false
+                                    root.timelineAutoScrollDirection = 0
+                                    root.timelineDragHorizon = 0
                                 }
                             }
                         }
@@ -4069,9 +4100,20 @@ ApplicationWindow {
                 var edgeTime = (timelineViewport.contentX + timelineViewport.width) / root.timelineZoom
                 root.timelineDragHorizon = Math.max(root.timelineDragHorizon, edgeTime + 120)
             }
-            maxX = Math.max(0, timelineCanvas.width - timelineViewport.width)
-            timelineViewport.contentX = Math.max(0, Math.min(maxX,
-                timelineViewport.contentX + root.timelineAutoScrollDirection * 12))
+            var step = root.timelinePlayheadDragging
+                ? Math.max(0.5, root.timelineZoom * 0.4) : 12
+            timelineViewport.contentX = Math.max(0, Math.min(
+                Math.max(0, timelineCanvas.width - timelineViewport.width),
+                timelineViewport.contentX + root.timelineAutoScrollDirection * step))
+            if (root.timelinePlayheadDragging) {
+                var edgeX = timelineViewport.contentX
+                    + (root.timelineAutoScrollDirection > 0 ? timelineViewport.width - 20 : 20)
+                var targetSeconds = edgeX / Math.max(0.001, root.timelineZoom)
+                root.timelineDragHorizon = Math.max(root.timelineDragHorizon,
+                    targetSeconds + (root.timelineAutoScrollDirection > 0 ? 120 : 0))
+                root.timelinePosition = Math.max(0, Math.min(root.timelineWorkspaceDuration, targetSeconds))
+                root.updateTimelinePreview(root.timelinePosition)
+            }
         }
     }
 
