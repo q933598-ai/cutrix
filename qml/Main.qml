@@ -4057,17 +4057,18 @@ ApplicationWindow {
                             z: 11
                             Text { anchors.centerIn: parent; text: "▼"; color: theme.background; font.pixelSize: 9 }
                             MouseArea {
+                                id: playheadDragArea
                                 anchors.fill: parent
                                 preventStealing: true
                                 cursorShape: pressed ? Qt.SizeHorCursor : Qt.OpenHandCursor
                                 onPressed: function(mouse) {
                                     root.timelinePlayheadDragging = true
                                     root.timelineDragHorizon = 0
-                                    root.setPlayheadFromPointer(this, mouse)
+                                    root.setPlayheadFromPointer(playheadDragArea, mouse)
                                 }
                                 onPositionChanged: function(mouse) {
                                     if (pressed)
-                                        root.setPlayheadFromPointer(this, mouse)
+                                        root.setPlayheadFromPointer(playheadDragArea, mouse)
                                 }
                                 onReleased: {
                                     root.timelinePlayheadDragging = false
