@@ -3699,7 +3699,6 @@ ApplicationWindow {
                         contentWidth: timelineCanvas.width
                         contentHeight: timelineCanvas.height
                         flickableDirection: Flickable.HorizontalAndVerticalFlick
-                        interactive: !root.timelinePlayheadDragging
                         boundsBehavior: Flickable.StopAtBounds
                         onContentXChanged: {
                             if (width <= 0 || root.timelineZoom <= 0) return
@@ -4127,6 +4126,41 @@ ApplicationWindow {
                             height: Math.max(0, timelineCanvas.height - 20)
                             color: theme.accent
                             z: 10
+                        }
+                        MouseArea {
+                            id: playheadLineDragArea
+                            x: Math.max(0, Math.min(timelineCanvas.width - width, timelinePlayhead.x - width / 2))
+                            y: 32
+                            width: 12
+                            height: Math.max(0, timelineCanvas.height - y)
+                            z: 9
+                            acceptedButtons: Qt.LeftButton
+                            preventStealing: true
+                            cursorShape: pressed ? Qt.SizeHorCursor : Qt.OpenHandCursor
+                            onPressed: function(mouse) {
+                                root.timelinePlayheadDragging = true
+                                timelineViewport.interactive = false
+                                root.timelineDragHorizon = 0
+                                root.setPlayheadFromPointer(playheadLineDragArea, mouse)
+                            }
+                            onPositionChanged: function(mouse) {
+                                if (pressed)
+                                    root.setPlayheadFromPointer(playheadLineDragArea, mouse)
+                            }
+                            onReleased: {
+                                root.timelinePlayheadDragging = false
+                                timelineViewport.interactive = true
+                                root.timelineAutoScrollDirection = 0
+                                root.timelineAutoScrollVelocity = 0
+                                root.timelineDragHorizon = 0
+                            }
+                            onCanceled: {
+                                root.timelinePlayheadDragging = false
+                                timelineViewport.interactive = true
+                                root.timelineAutoScrollDirection = 0
+                                root.timelineAutoScrollVelocity = 0
+                                root.timelineDragHorizon = 0
+                            }
                         }
                         Rectangle {
                             x: Math.max(0, Math.min(timelineCanvas.width - width, timelinePlayhead.x - 6))
