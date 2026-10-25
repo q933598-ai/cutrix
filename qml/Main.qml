@@ -3714,12 +3714,15 @@ ApplicationWindow {
                                                 }
                                                 resizePreviewDuration = Math.max(0.5, Math.min(maxDuration,
                                                     Math.round((resizeOriginalDuration + delta) * 10) / 10))
+                                                root.timelineDragHorizon = Math.max(root.timelineDragHorizon,
+                                                    resizeOriginalStart + resizePreviewDuration)
                                             }
                                             function finishResize() {
                                                 if (resizingEdge === "") return
                                                 var newDuration = resizePreviewDuration
                                                 var clipId = String(modelData.clipId || "")
                                                 resizingEdge = ""
+                                                root.timelineAutoScrollDirection = 0
                                                 var updated = root.mediaFiles.slice()
                                                 for (var i = 0; i < updated.length; ++i) {
                                                     if (String(updated[i].clipId || "") === clipId) {
@@ -3729,6 +3732,7 @@ ApplicationWindow {
                                                 }
                                                 root.recordTimelineHistory("Изменить длительность клипа")
                                                 root.mediaFiles = updated
+                                                root.timelineDragHorizon = 0
                                                 root.saveTimelineMedia(updated)
                                                 root.statusMessage = "Длина клипа изменена"
                                             } 
@@ -3784,6 +3788,8 @@ ApplicationWindow {
                                                 cursorShape: pressed && mouseButtons === Qt.LeftButton
                                                     ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                                                 onPressed: function(mouse) {
+                                                    root.timelineAutoScrollDirection = 0
+                                                    root.timelineDragHorizon = 0
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
@@ -3801,11 +3807,20 @@ ApplicationWindow {
                                                     if (!draggingClip && Math.abs(dx) + Math.abs(dy) > 4)
                                                         draggingClip = true
                                                     if (!draggingClip) return
-                                                    var previewX = Math.max(0, Math.min(timelineTrack.width - timelineClip.width,
-                                                                                       dragStartClipX + dx))
+                                                    var previewX = Math.max(0, dragStartClipX + dx)
                                                     var previewY = Math.max(-timelineClip.height - 2,
                                                                             Math.min(timelineTrack.height + 2,
                                                                                      dragStartClipY + dy))
+                                                    var proposedEnd = previewX / Math.max(0.001, timelineCanvas.timelineScale)
+                                                        + root.timelineClipDuration(timelineClip.modelData)
+                                                    root.timelineDragHorizon = Math.max(root.timelineDragHorizon, proposedEnd)
+                                                    var viewportPoint = mapToItem(timelineViewport, mouse.x, mouse.y)
+                                                    if (viewportPoint.x > timelineViewport.width - 36)
+                                                        root.timelineAutoScrollDirection = 1
+                                                    else if (viewportPoint.x < 36 && timelineViewport.contentX > 0)
+                                                        root.timelineAutoScrollDirection = -1
+                                                    else
+                                                        root.timelineAutoScrollDirection = 0
                                                     var modelX = Math.max(0, Number(timelineClip.modelData.start || 0)
                                                                              * timelineCanvas.timelineScale)
                                                     // Do not assign directly to x/y: that would permanently break
@@ -3818,14 +3833,16 @@ ApplicationWindow {
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     var draggedX = timelineClip.x
                                                     draggingClip = false
+                                                    root.timelineAutoScrollDirection = 0
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
                                                     if (!wasDragging) {
-                                                         root.selectedTimelineClipId = String(timelineClip.modelData.clipId || "")
-                                                         root.selectedMedia = String(timelineClip.modelData.name || "")
-                                                         // Selecting a clip must not seek the playhead to its start.
-                                                         return
-                                                     }
+                                                        root.timelineDragHorizon = 0
+                                                        root.selectedTimelineClipId = String(timelineClip.modelData.clipId || "")
+                                                        root.selectedMedia = String(timelineClip.modelData.name || "")
+                                                        // Selecting a clip must not seek the playhead to its start.
+                                                        return
+                                                    }
 
                                                     var updated = root.mediaFiles.slice()
                                                     var movingIndex = -1
@@ -3859,6 +3876,7 @@ ApplicationWindow {
                                                     }
                                                     root.recordTimelineHistory("Переместить клип")
                                                     root.mediaFiles = updated
+                                                    root.timelineDragHorizon = 0
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
                                                 }
@@ -3890,12 +3908,22 @@ ApplicationWindow {
                                                      anchors.fill: parent
                                                      cursorShape: Qt.SizeHorCursor
                                                      onPressed: function(mouse) {
+                                                         root.timelineAutoScrollDirection = 0
                                                          timelineClip.beginResize(mapToItem(timelineCanvas, mouse.x, mouse.y).x)
                                                      }
                                                      onPositionChanged: function(mouse) {
-                                                         if (pressed) timelineClip.updateResize(mapToItem(timelineCanvas, mouse.x, mouse.y).x)
+                                                         if (!pressed) return
+                                                         timelineClip.updateResize(mapToItem(timelineCanvas, mouse.x, mouse.y).x)
+                                                         var viewportPoint = mapToItem(timelineViewport, mouse.x, mouse.y)
+                                                         if (viewportPoint.x > timelineViewport.width - 36)
+                                                             root.timelineAutoScrollDirection = 1
+                                                         else if (viewportPoint.x < 36 && timelineViewport.contentX > 0)
+                                                             root.timelineAutoScrollDirection = -1
+                                                         else
+                                                             root.timelineAutoScrollDirection = 0
                                                      }
                                                      onReleased: timelineClip.finishResize()
+                                                     onCanceled: timelineClip.finishResize()
                                                  }
                                              }
                                         }
@@ -3998,7 +4026,7 @@ ApplicationWindow {
                                 onPressed: function(mouse) {
                                     var sceneX = mapToItem(timelineCanvas, mouse.x, mouse.y).x
                                     if (root.timelineDuration > 0 && timelineCanvas.width > 0) {
-                                        root.timelinePosition = Math.max(0, Math.min(root.timelineDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale)))
+                                        root.timelinePosition = Math.max(0, Math.min(root.timelineWorkspaceDuration, sceneX / Math.max(0.001, timelineCanvas.timelineScale)))
                                         root.updateTimelinePreview(root.timelinePosition)
                                     }
                                 }
@@ -4012,9 +4040,33 @@ ApplicationWindow {
                             }
                         }
                     }
+                    }
                 }
             }
         }
+    }
+
+    Timer {
+        id: timelineAutoScrollTimer
+        interval: 16
+        repeat: true
+        running: root.timelineAutoScrollDirection !== 0 && root.currentProjectPath !== ""
+        onTriggered: {
+            var maxX = Math.max(0, timelineCanvas.width - timelineViewport.width)
+            if (root.timelineAutoScrollDirection > 0
+                    && timelineViewport.contentX >= maxX - 100) {
+                var edgeTime = (timelineViewport.contentX + timelineViewport.width) / root.timelineZoom
+                root.timelineDragHorizon = Math.max(root.timelineDragHorizon, edgeTime + 120)
+            }
+            maxX = Math.max(0, timelineCanvas.width - timelineViewport.width)
+            timelineViewport.contentX = Math.max(0, Math.min(maxX,
+                timelineViewport.contentX + root.timelineAutoScrollDirection * 12))
+        }
+    }
+
+    onTimelinePositionChanged: {
+        if (timelinePlaybackTimer.running)
+            Qt.callLater(root.keepTimelinePlayheadVisible)
     }
 
     footer: Rectangle {
