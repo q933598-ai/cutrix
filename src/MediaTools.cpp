@@ -37,6 +37,16 @@ QString runTool(const QString &program, const QStringList &args, int timeoutMs =
         return {};
     return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
 }
+
+bool hasAudioStream(const QString &path)
+{
+    return !runTool(QStringLiteral("ffprobe"), {
+        QStringLiteral("-v"), QStringLiteral("error"),
+        QStringLiteral("-select_streams"), QStringLiteral("a:0"),
+        QStringLiteral("-show_entries"), QStringLiteral("stream=index"),
+        QStringLiteral("-of"), QStringLiteral("csv=p=0"), path
+    }, 6000).isEmpty();
+}
 }
 
 MediaTools::MediaTools(QObject *parent) : QObject(parent)
@@ -218,13 +228,15 @@ QString MediaTools::prepareReversePreview(const QString &mediaUrl, double source
     if (cacheRoot.isEmpty() || !QDir().mkpath(cacheDir))
         return QStringLiteral("error:Не удалось создать кэш предпросмотра реверса.");
 
+    m_reversePreviewHasAudio = hasAudioStream(inputInfo.absoluteFilePath());
     const QByteArray key = QCryptographicHash::hash(
         (inputInfo.absoluteFilePath() + QLatin1Char('|')
          + QString::number(inputInfo.size()) + QLatin1Char('|')
          + QString::number(inputInfo.lastModified().toSecsSinceEpoch()) + QLatin1Char('|')
          + QString::number(sourceOffset, 'f', 3) + QLatin1Char('|')
          + QString::number(duration, 'f', 3)
-         + QStringLiteral("|cutrix-reverse-preview-v1|960|24|x264-ultrafast"))
+         + QStringLiteral("|cutrix-reverse-preview-v2|960|24|x264-ultrafast|audio=")
+         + (m_reversePreviewHasAudio ? QStringLiteral("1") : QStringLiteral("0")))
             .toUtf8(), QCryptographicHash::Sha256).toHex();
     const QString stem = cacheDir + QLatin1Char('/') + QString::fromLatin1(key);
     const QString outputPath = stem + QStringLiteral(".mp4");
@@ -289,22 +301,41 @@ void MediaTools::startReversePreviewChunk()
     m_reversePreviewStage = QStringLiteral("chunk");
 
     m_reversePreviewProcess.setProgram(m_reversePreviewFfmpeg);
-    m_reversePreviewProcess.setArguments({
+    QStringList arguments = {
         QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
         QStringLiteral("-y"), QStringLiteral("-threads"), QStringLiteral("2"),
         QStringLiteral("-ss"), QString::number(inputSeek, 'f', 3),
         QStringLiteral("-t"), QString::number(segmentDuration, 'f', 3),
-        QStringLiteral("-i"), m_reversePreviewSourcePath,
-        QStringLiteral("-an"),
-        QStringLiteral("-vf"),
-        QStringLiteral("scale='min(960\\,iw)':-2,fps=24,reverse,setpts=PTS-STARTPTS"),
-        QStringLiteral("-c:v"), QStringLiteral("libx264"),
-        QStringLiteral("-preset"), QStringLiteral("ultrafast"),
-        QStringLiteral("-crf"), QStringLiteral("25"),
-        QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"),
-        QStringLiteral("-movflags"), QStringLiteral("+faststart"),
-        chunkPath
-    });
+        QStringLiteral("-i"), m_reversePreviewSourcePath
+    };
+    const QString videoFilters =
+        QStringLiteral("scale='min(960\\,iw)':-2,fps=24,reverse,setpts=PTS-STARTPTS");
+    if (m_reversePreviewHasAudio) {
+        arguments << QStringLiteral("-filter_complex")
+                  << QStringLiteral("[0:v:0]%1[v];"
+                                    "[0:a:0]aresample=48000,"
+                                    "aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                                    "areverse,asetpts=PTS-STARTPTS[a]").arg(videoFilters)
+                  << QStringLiteral("-map") << QStringLiteral("[v]")
+                  << QStringLiteral("-map") << QStringLiteral("[a]");
+    } else {
+        arguments << QStringLiteral("-an")
+                  << QStringLiteral("-vf") << videoFilters;
+    }
+    arguments << QStringLiteral("-c:v") << QStringLiteral("libx264")
+              << QStringLiteral("-preset") << QStringLiteral("ultrafast")
+              << QStringLiteral("-crf") << QStringLiteral("25")
+              << QStringLiteral("-pix_fmt") << QStringLiteral("yuv420p");
+    if (m_reversePreviewHasAudio) {
+        arguments << QStringLiteral("-c:a") << QStringLiteral("aac")
+                  << QStringLiteral("-b:a") << QStringLiteral("128k")
+                  << QStringLiteral("-ar") << QStringLiteral("48000")
+                  << QStringLiteral("-ac") << QStringLiteral("2")
+                  << QStringLiteral("-shortest");
+    }
+    arguments << QStringLiteral("-movflags") << QStringLiteral("+faststart")
+              << chunkPath;
+    m_reversePreviewProcess.setArguments(arguments);
     m_reversePreviewProcess.start();
 }
 
