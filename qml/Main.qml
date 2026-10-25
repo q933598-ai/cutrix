@@ -76,6 +76,13 @@ ApplicationWindow {
     property string statusMessage: "Готово · Cutrix Project Hub"
     property int mediaPanelWidth: 255
     property real timelinePosition: 0
+    // Timeline zoom is measured in screen pixels per second. The available
+    // editing horizon starts at 20 minutes and doubles as clips move further out.
+    property real timelineZoom: 4
+    property real timelineDragHorizon: 0
+    property int timelineAutoScrollDirection: 0
+    readonly property real timelineWorkspaceDuration:
+        timelineWorkspaceForDuration(Math.max(timelineDuration, timelineDragHorizon))
     // Все элементы таймлайна используют один масштаб, чтобы линейка,
     // клипы и ползунок совпадали по времени.
     property real timelineDuration: {
@@ -101,6 +108,47 @@ ApplicationWindow {
     // to the project only when the user releases a transform handle.
     property var transformPreviewOverride: ({})
     property var transformGesture: null
+
+    function timelineWorkspaceForDuration(seconds) {
+        var duration = Number(seconds)
+        if (!isFinite(duration) || duration < 0) duration = 0
+        var horizon = 20 * 60
+        while (horizon < duration) horizon *= 2
+        return horizon
+    }
+
+    function setTimelineZoom(value) {
+        var nextZoom = Math.max(2, Math.min(40, Number(value) || 4))
+        var anchorTime = 0
+        if (timelineViewport && timelineViewport.width > 0 && timelineZoom > 0)
+            anchorTime = (timelineViewport.contentX + timelineViewport.width / 2) / timelineZoom
+        timelineZoom = nextZoom
+        Qt.callLater(function() {
+            var maxX = Math.max(0, timelineCanvas.width - timelineViewport.width)
+            timelineViewport.contentX = Math.max(0, Math.min(maxX,
+                anchorTime * timelineZoom - timelineViewport.width / 2))
+        })
+    }
+
+    function fitTimelineToProject() {
+        var duration = Math.max(1, timelineDuration)
+        var fitZoom = Math.max(2, Math.min(40, Math.max(1, timelineViewport.width) / duration))
+        timelineZoom = fitZoom
+        Qt.callLater(function() { timelineViewport.contentX = 0 })
+    }
+
+    function keepTimelinePlayheadVisible() {
+        if (!timelinePlaybackTimer.running || !timelineViewport || timelineViewport.width <= 0)
+            return
+        var playheadX = timelinePosition * timelineZoom
+        var left = timelineViewport.contentX
+        var right = left + timelineViewport.width
+        if (playheadX < left + 12)
+            timelineViewport.contentX = Math.max(0, playheadX - 24)
+        else if (playheadX > right - 60)
+            timelineViewport.contentX = Math.max(0, Math.min(timelineCanvas.width - timelineViewport.width,
+                playheadX - timelineViewport.width * 0.78))
+    }
 
     function formatTime(seconds) {
         var value = Number(seconds)
@@ -3472,9 +3520,55 @@ ApplicationWindow {
                 spacing: 6
                 RowLayout {
                     Layout.fillWidth: true
-                    Text { text: "↶  ↷   ✂   ◫   ✦"; color: theme.accent; font.family: "monospace"; font.pixelSize: (18 * root.uiFontScale / 100) }
+                    spacing: 5
+                    Text {
+                        text: "МАСШТАБ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    Button {
+                        text: "−"
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 26
+                        onClicked: root.setTimelineZoom(root.timelineZoom - Math.max(1, root.timelineZoom * 0.15))
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                    }
+                    Slider {
+                        id: timelineZoomSlider
+                        Layout.preferredWidth: 140
+                        Layout.minimumWidth: 80
+                        from: 2
+                        to: 40
+                        stepSize: 1
+                        value: root.timelineZoom
+                        onMoved: root.setTimelineZoom(value)
+                    }
+                    Button {
+                        text: "+"
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 26
+                        onClicked: root.setTimelineZoom(root.timelineZoom + Math.max(1, root.timelineZoom * 0.15))
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                    }
+                    Button {
+                        text: "Вписать"
+                        Layout.preferredHeight: 26
+                        onClicked: root.fitTimelineToProject()
+                        palette.buttonText: theme.accent
+                        background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                    }
                     Item { Layout.fillWidth: true }
-                    Text { text: "МАСШТАБ  − ━━━━━●━━ +"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
+                    Text {
+                        text: root.formatTime(root.timelinePosition) + " / " + root.formatTime(root.timelineDuration)
+                            + " · область " + root.formatTime(root.timelineWorkspaceDuration)
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                        elide: Text.ElideLeft
+                    }
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -3497,39 +3591,73 @@ ApplicationWindow {
                             }
                         }
                     }
-                    Item {
-                        id: timelineCanvas
+                    Flickable {
+                        id: timelineViewport
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        // Подгоняем весь проект под видимую ширину. Линейка,
-                        // клипы, перетаскивание и playhead используют этот масштаб.
-                        property real timelineScale: width > 0
-                            ? width / Math.max(root.timelineDuration, 35)
-                            : 1
-                        Column {
-                            anchors.fill: parent
-                            spacing: 3
-                            Rectangle {
-                                width: parent.width
-                                height: 22
-                                color: theme.background
-                                Row {
-                                    anchors.fill: parent
-                                    Repeater {
-                                        model: 7
-                                        delegate: Text {
-                                            required property int index
-                                            width: parent.width / 7
-                                            text: root.formatTime(root.timelineDuration * index / 6)
-                                            color: theme.muted
-                                            font.family: "monospace"
-                                            font.pixelSize: (12 * root.uiFontScale / 100)
-                                            verticalAlignment: Text.AlignVCenter
+                        contentWidth: timelineCanvas.width
+                        contentHeight: timelineCanvas.height
+                        flickableDirection: Flickable.HorizontalFlick
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.horizontal: ScrollBar {
+                            policy: ScrollBar.AsNeeded
+                        }
+                        WheelHandler {
+                            target: null
+                            onWheel: function(event) {
+                                if (event.modifiers & Qt.ControlModifier) {
+                                    root.setTimelineZoom(root.timelineZoom + (event.angleDelta.y > 0 ? 1 : -1))
+                                } else {
+                                    var delta = Math.abs(event.angleDelta.x) > 0
+                                        ? event.angleDelta.x : event.angleDelta.y
+                                    var maxX = Math.max(0, timelineCanvas.width - timelineViewport.width)
+                                    timelineViewport.contentX = Math.max(0, Math.min(maxX,
+                                        timelineViewport.contentX - delta * 0.5))
+                                }
+                                event.accepted = true
+                            }
+                        }
+                        Item {
+                            id: timelineCanvas
+                            width: Math.max(timelineViewport.width,
+                                root.timelineWorkspaceDuration * timelineScale)
+                            height: timelineViewport.height
+                            clip: true
+                            // One stable scale is shared by ruler, clip geometry,
+                            // dragging, resizing, drop positions and the playhead.
+                            property real timelineScale: root.timelineZoom
+                            readonly property real rulerStep: {
+                                var raw = 100 / Math.max(0.5, timelineScale)
+                                var power = Math.pow(10, Math.floor(Math.log10(raw)))
+                                var normalized = raw / power
+                                var factor = normalized <= 1 ? 1 : (normalized <= 2 ? 2 : (normalized <= 5 ? 5 : 10))
+                                return Math.max(1, factor * power)
+                            }
+                            Column {
+                                anchors.fill: parent
+                                spacing: 3
+                                Rectangle {
+                                    width: parent.width
+                                    height: 22
+                                    color: theme.background
+                                    clip: true
+                                    Row {
+                                        anchors.fill: parent
+                                        Repeater {
+                                            model: Math.ceil(root.timelineWorkspaceDuration / timelineCanvas.rulerStep) + 1
+                                            delegate: Text {
+                                                required property int index
+                                                width: timelineCanvas.rulerStep * timelineCanvas.timelineScale
+                                                text: root.formatTime(index * timelineCanvas.rulerStep)
+                                                color: theme.muted
+                                                font.family: "monospace"
+                                                font.pixelSize: (12 * root.uiFontScale / 100)
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
                                         }
                                     }
                                 }
-                            }
                             Repeater {
                                 model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
                                 delegate: Item {
