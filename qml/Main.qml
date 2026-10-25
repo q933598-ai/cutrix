@@ -106,6 +106,10 @@ ApplicationWindow {
     property string timelineImageClipId: ""
     property bool timelineImageActive: false
     property real timelineSeekPending: -1
+    // Cached reverse clips play forward from a local proxy instead of seeking the
+    // original compressed stream backwards on every timer tick.
+    property var reversePreviewCache: ({})
+    property var reversePreviewRequests: ({})
     property int timelineClipSerial: 0
     property string contextMenuClipId: ""
     property real contextMenuTimelinePosition: 0
@@ -363,8 +367,14 @@ ApplicationWindow {
             statusMessage = "Реверс доступен для видеоклипа на V1/V2"
             return
         }
-        setSelectedClipProperties({ reverse: !Boolean(selectedTimelineClip.reverse) },
-            selectedTimelineClip.reverse ? "Отключить реверс" : "Эффект «Реверс»")
+        var enabling = !Boolean(selectedTimelineClip.reverse)
+        var clipId = String(selectedTimelineClip.clipId || "")
+        setSelectedClipProperties({ reverse: enabling },
+            enabling ? "Эффект «Реверс»" : "Отключить реверс")
+        if (enabling) {
+            var reverseClip = timelineClipById(clipId)
+            if (reverseClip) requestReversePreview(reverseClip)
+        }
     }
 
     function requestAutoSubtitles() {
@@ -990,6 +1000,69 @@ ApplicationWindow {
         statusMessage = "Предпросмотр файла: " + selectedMedia
     }
 
+    function reversePreviewSignature(clip) {
+        if (!clip) return ""
+        return String(clip.url || "") + "|"
+            + Number(clip.sourceOffset || 0).toFixed(3) + "|"
+            + Number(timelineClipDuration(clip)).toFixed(3)
+    }
+
+    function hasTimelineReversePreview(clip) {
+        if (!clip || clip.kind !== "video" || !clip.reverse) return false
+        var id = String(clip.clipId || "")
+        var entry = reversePreviewCache[id]
+        return !!entry && entry.signature === reversePreviewSignature(clip)
+            && String(entry.url || "") !== ""
+    }
+
+    function timelinePlaybackUrl(clip) {
+        if (!clip) return ""
+        if (hasTimelineReversePreview(clip))
+            return String(reversePreviewCache[String(clip.clipId || "")].url)
+        return String(clip.url || "")
+    }
+
+    function requestReversePreview(clip) {
+        if (!clip || clip.kind !== "video" || !clip.reverse) return false
+        var id = String(clip.clipId || "")
+        if (id === "") return false
+        var signature = reversePreviewSignature(clip)
+        if (hasTimelineReversePreview(clip)) return true
+        var existing = reversePreviewRequests[id]
+        if (existing && existing.signature === signature
+                && (existing.status === "pending" || existing.status === "failed"))
+            return false
+        if (mediaTools.reversePreviewRunning) return false
+
+        var result = String(mediaTools.prepareReversePreview(String(clip.url || ""),
+            Number(clip.sourceOffset || 0), timelineClipDuration(clip), id) || "")
+        if (result === "pending") {
+            var pending = Object.assign({}, reversePreviewRequests)
+            pending[id] = { signature: signature, status: "pending" }
+            reversePreviewRequests = pending
+            statusMessage = "Готовлю плавный предпросмотр реверса…"
+            return false
+        }
+        if (result === "busy") return false
+        if (result.indexOf("error:") === 0) {
+            var failed = Object.assign({}, reversePreviewRequests)
+            failed[id] = { signature: signature, status: "failed" }
+            reversePreviewRequests = failed
+            statusMessage = "Реверс: " + result.substring(6)
+            return false
+        }
+        if (result !== "") {
+            var cache = Object.assign({}, reversePreviewCache)
+            cache[id] = { signature: signature, url: result }
+            reversePreviewCache = cache
+            var requests = Object.assign({}, reversePreviewRequests)
+            delete requests[id]
+            reversePreviewRequests = requests
+            return true
+        }
+        return false
+    }
+
     function updateTimelinePreview(seconds) {
         var clip = timelineVideoAt(seconds)
         timelinePreviewActive = true
@@ -1005,13 +1078,16 @@ ApplicationWindow {
             return
         }
 
-        var url = String(clip.url || "")
+        var url = root.timelinePlaybackUrl(clip)
         var clipId = String(clip.clipId || "")
         var clipStart = Number(clip.start || 0)
-        var offset = clip.reverse && clip.kind === "video"
-                ? Math.max(Number(clip.sourceOffset || 0), Number(clip.sourceOffset || 0)
-                    + timelineClipDuration(clip) - Math.max(0, seconds - clipStart) - 0.04)
-                : Math.max(0, Number(clip.sourceOffset || 0) + seconds - clipStart)
+        var reverseProxyReady = root.hasTimelineReversePreview(clip)
+        var offset = reverseProxyReady
+                ? Math.max(0, seconds - clipStart)
+                : (clip.reverse && clip.kind === "video"
+                    ? Math.max(Number(clip.sourceOffset || 0), Number(clip.sourceOffset || 0)
+                        + timelineClipDuration(clip) - Math.max(0, seconds - clipStart) - 0.04)
+                    : Math.max(0, Number(clip.sourceOffset || 0) + seconds - clipStart))
 
         // A still image on the upper track overlays the lower video, but must
         // not replace its decoder: otherwise the underlying video's audio dies.
@@ -1029,13 +1105,16 @@ ApplicationWindow {
                 return
             }
 
-            var footageUrl = String(footage.url || "")
+            var footageUrl = root.timelinePlaybackUrl(footage)
             var footageId = String(footage.clipId || "")
             var footageStart = Number(footage.start || 0)
-            var footageOffset = footage.reverse
-                ? Math.max(Number(footage.sourceOffset || 0), Number(footage.sourceOffset || 0)
-                    + timelineClipDuration(footage) - Math.max(0, seconds - footageStart) - 0.04)
-                : Math.max(0, Number(footage.sourceOffset || 0) + seconds - footageStart)
+            var footageHasReverseProxy = root.hasTimelineReversePreview(footage)
+            var footageOffset = footageHasReverseProxy
+                ? Math.max(0, seconds - footageStart)
+                : (footage.reverse
+                    ? Math.max(Number(footage.sourceOffset || 0), Number(footage.sourceOffset || 0)
+                        + timelineClipDuration(footage) - Math.max(0, seconds - footageStart) - 0.04)
+                    : Math.max(0, Number(footage.sourceOffset || 0) + seconds - footageStart))
             if (footageUrl !== String(timelinePreviewUrl)
                     || footageId !== String(timelinePreviewClipId)
                     || footageStart !== timelinePreviewClipStart) {
@@ -1478,6 +1557,18 @@ ApplicationWindow {
                 if (audioPlayer) audioPlayer.syncToTimeline()
             }
             var currentClip = root.timelineVideoAt(root.timelinePosition)
+            var reverseClipToPrepare = currentClip && currentClip.kind === "image"
+                ? root.timelineFootageAt(root.timelinePosition) : currentClip
+            if (reverseClipToPrepare && reverseClipToPrepare.kind === "video"
+                    && reverseClipToPrepare.reverse
+                    && !root.hasTimelineReversePreview(reverseClipToPrepare)
+                    && (!root.reversePreviewRequests[String(reverseClipToPrepare.clipId || "")]
+                        || root.reversePreviewRequests[String(reverseClipToPrepare.clipId || "")].status !== "failed")) {
+                if (!mediaTools.reversePreviewRunning)
+                    root.requestReversePreview(reverseClipToPrepare)
+                mediaPlayer.pause()
+                return
+            }
             if (currentClip && currentClip.kind === "image") {
                 var imageClipId = String(currentClip.clipId || "")
                 if (!root.timelineImageActive
@@ -1520,7 +1611,8 @@ ApplicationWindow {
                 return
             }
 
-            if (currentClip && currentClip.kind === "video" && currentClip.reverse) {
+            if (currentClip && currentClip.kind === "video" && currentClip.reverse
+                    && !root.hasTimelineReversePreview(currentClip)) {
                 var reverseId = String(currentClip.clipId || "")
                 var reverseSameClip = reverseId !== "" && reverseId === String(root.timelinePreviewClipId)
                     && String(currentClip.url) === String(root.timelinePreviewUrl)
@@ -1559,7 +1651,7 @@ ApplicationWindow {
             if (currentClip) {
                 var currentId = String(currentClip.clipId || "")
                 var sameClip = currentId !== "" && currentId === String(root.timelinePreviewClipId)
-                var sameSource = String(currentClip.url) === String(root.timelinePreviewUrl)
+                var sameSource = root.timelinePlaybackUrl(currentClip) === String(root.timelinePreviewUrl)
                 if (!sameClip || !sameSource) {
                     root.updateTimelinePreview(root.timelinePosition)
                     return
@@ -1698,8 +1790,13 @@ ApplicationWindow {
                     mediaPlayer.position = root.timelineSeekPending * 1000
                     root.timelineSeekPending = -1
                     var activeClip = root.timelineVideoAt(root.timelinePosition)
-                    if (timelinePlaybackTimer.running && !(activeClip && activeClip.reverse)) mediaPlayer.play()
-                    else if (activeClip && activeClip.reverse) mediaPlayer.pause()
+                    var activeHasReverseProxy = activeClip && activeClip.reverse
+                        && root.hasTimelineReversePreview(activeClip)
+                    if (timelinePlaybackTimer.running && (!(activeClip && activeClip.reverse)
+                            || activeHasReverseProxy))
+                        mediaPlayer.play()
+                    else if (activeClip && activeClip.reverse && !activeHasReverseProxy)
+                        mediaPlayer.pause()
                 } else if (root.timelinePreviewUrl === "") {
                     root.statusMessage = "Видео загружено: " + root.selectedMedia
                 }
@@ -1780,22 +1877,22 @@ ApplicationWindow {
         parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true
-        width: 430
+        width: Math.min(590, root.width - 40)
         title: "Пиксельные стикеры"
         standardButtons: Dialog.Cancel
         contentItem: ColumnLayout {
             spacing: 10
             Label {
                 Layout.fillWidth: true
-                text: "Выбери стикер — он появится на отдельном клипе, который можно двигать, масштабировать и поворачивать."
+                text: "Выбирай по крупному превью и названию. Стикер добавится на дорожку V3 на 5 секунд."
                 color: theme.muted
                 wrapMode: Text.WordWrap
             }
             GridLayout {
                 Layout.fillWidth: true
                 columns: 3
-                rowSpacing: 6
-                columnSpacing: 6
+                rowSpacing: 8
+                columnSpacing: 8
                 Repeater {
                     model: [
                         { glyph: "★", name: "Звезда", color: "#f6c177",
@@ -1819,15 +1916,40 @@ ApplicationWindow {
                     delegate: Button {
                         required property var modelData
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 62
-                        text: modelData.glyph + "\n" + modelData.name
+                        Layout.minimumWidth: 0
+                        Layout.preferredHeight: 100
                         font.family: "monospace"
-                        font.pixelSize: 15
                         onClicked: {
                             root.addPixelSticker(modelData)
                             stickerDialog.close()
                         }
-                        palette.buttonText: modelData.color
+                        contentItem: Column {
+                            anchors.fill: parent
+                            anchors.margins: 5
+                            spacing: 3
+                            Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                width: parent.width
+                                height: 65
+                                text: modelData.art ? modelData.art : modelData.glyph
+                                color: modelData.color
+                                font.family: "monospace"
+                                font.pixelSize: modelData.art ? 12 : (String(modelData.glyph).length > 3 ? 22 : 30)
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                wrapMode: Text.NoWrap
+                            }
+                            Text {
+                                width: parent.width
+                                text: modelData.name
+                                color: theme.text
+                                font.family: "monospace"
+                                font.pixelSize: 11
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                            }
+                        }
                         background: Rectangle {
                             color: theme.panelAlt
                             border.color: modelData.color
@@ -1838,7 +1960,7 @@ ApplicationWindow {
             }
             Label {
                 Layout.fillWidth: true
-                text: "Совет: после добавления выдели стикер и измени размер/положение в предпросмотре."
+                text: "После добавления выбери стикер на V3. Перетаскивай его в предпросмотре; размер и поворот можно менять там же."
                 color: theme.muted
                 wrapMode: Text.WordWrap
             }
@@ -2096,6 +2218,39 @@ ApplicationWindow {
 
     Connections {
         target: mediaTools
+        function onReversePreviewReady(clipId, previewUrl) {
+            var id = String(clipId || "")
+            var request = root.reversePreviewRequests[id]
+            var clip = root.timelineClipById(id)
+            var signature = request && request.signature
+                ? request.signature : (clip ? root.reversePreviewSignature(clip) : "")
+            var cache = Object.assign({}, root.reversePreviewCache)
+            cache[id] = { signature: signature, url: String(previewUrl || "") }
+            root.reversePreviewCache = cache
+            var requests = Object.assign({}, root.reversePreviewRequests)
+            delete requests[id]
+            root.reversePreviewRequests = requests
+            if (clip && String(previewUrl || "") !== "") {
+                var active = root.timelineVideoAt(root.timelinePosition)
+                var footage = root.timelineFootageAt(root.timelinePosition)
+                if ((active && String(active.clipId || "") === id)
+                        || (active && active.kind === "image" && footage
+                            && String(footage.clipId || "") === id))
+                    root.updateTimelinePreview(root.timelinePosition)
+                root.statusMessage = "Предпросмотр реверса готов · " + String(clip.name || "клип")
+            }
+        }
+        function onReversePreviewFailed(clipId, message) {
+            var id = String(clipId || "")
+            var clip = root.timelineClipById(id)
+            var request = root.reversePreviewRequests[id]
+            var signature = request && request.signature
+                ? request.signature : (clip ? root.reversePreviewSignature(clip) : "")
+            var requests = Object.assign({}, root.reversePreviewRequests)
+            requests[id] = { signature: signature, status: "failed" }
+            root.reversePreviewRequests = requests
+            root.statusMessage = "Реверс без кэша (медленнее): " + String(message || "ошибка FFmpeg")
+        }
         function onTranscriptionRunningChanged() {
             if (mediaTools.transcriptionRunning)
                 root.statusMessage = "Распознаю речь локально…"
