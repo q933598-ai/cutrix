@@ -2735,12 +2735,12 @@ ApplicationWindow {
                     hoverEnabled: true
                     cursorShape: Qt.SizeHorCursor
                     onPressed: function(mouse) {
-                        mediaPanelSplitter.dragStartScreenX = mapToItem(root, mouse.x, mouse.y).x
+                        mediaPanelSplitter.dragStartScreenX = mapToItem(root.contentItem, mouse.x, mouse.y).x
                         mediaPanelSplitter.dragStartPanelWidth = root.mediaPanelWidth
                     }
                     onPositionChanged: function(mouse) {
                         if (!pressed) return
-                        var currentX = mapToItem(root, mouse.x, mouse.y).x
+                        var currentX = mapToItem(root.contentItem, mouse.x, mouse.y).x
                         root.mediaPanelWidth = Math.max(180, Math.min(440,
                             Math.round(mediaPanelSplitter.dragStartPanelWidth
                                 + currentX - mediaPanelSplitter.dragStartScreenX)))
