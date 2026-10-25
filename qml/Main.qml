@@ -3086,8 +3086,10 @@ ApplicationWindow {
                             visible: !root.timelinePreviewActive
                                 || (root.timelineImageActive
                                     && root.timelineFootageAt(root.timelinePosition) !== null)
-                                || (timelinePlaybackTimer.running
-                                    && mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                                // Keep the video surface available while paused too. The still
+                                // thumbnail is layered above it, but if frame extraction fails,
+                                // VideoOutput can still show the decoder's last rendered frame.
+                                || mediaPlayer.hasVideo
                             opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Scale {
