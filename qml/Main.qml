@@ -2384,6 +2384,7 @@ ApplicationWindow {
                 color: theme.panel
                 border.color: theme.border
                 ColumnLayout {
+                    id: mediaContentLayout
                     anchors.fill: parent
                     anchors.margins: 9
                     spacing: 8
@@ -2393,7 +2394,8 @@ ApplicationWindow {
                         id: mediaSearchField
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        Layout.maximumWidth: mediaPanel.width - 18
+                        Layout.preferredWidth: mediaContentLayout.width
+                        Layout.maximumWidth: mediaContentLayout.width
                         placeholderText: "Поиск медиа…"
                         text: root.mediaSearch
                         onTextChanged: root.mediaSearch = text
@@ -2406,6 +2408,8 @@ ApplicationWindow {
                         text: root.mediaPanelWidth < 245 ? "＋ Импорт" : "＋ Импортировать медиа"
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
+                        Layout.preferredWidth: mediaContentLayout.width
+                        Layout.maximumWidth: mediaContentLayout.width
                         Layout.preferredHeight: 34
                         leftPadding: 4
                         rightPadding: 4
@@ -2559,6 +2563,7 @@ ApplicationWindow {
                     contentWidth: availableWidth
                     ScrollBar.vertical.policy: ScrollBar.AsNeeded
                     ColumnLayout {
+                        id: effectsColumnLayout
                         x: 9
                         width: Math.max(1, effectsScroll.availableWidth - 18)
                         spacing: 10
@@ -2587,6 +2592,8 @@ ApplicationWindow {
                         id: effectZoomInButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
                         text: "⌕ Приближение · 150%"
                         contentItem: Text {
                             text: effectZoomInButton.text
@@ -2606,6 +2613,8 @@ ApplicationWindow {
                         id: effectZoomOutButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
                         text: "⌕ Отдаление · 80%"
                         contentItem: Text {
                             text: effectZoomOutButton.text
@@ -2625,6 +2634,8 @@ ApplicationWindow {
                         id: effectZoomResetButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
                         text: "↺ Обычный масштаб · 100%"
                         contentItem: Text {
                             text: effectZoomResetButton.text
@@ -2648,7 +2659,8 @@ ApplicationWindow {
                     }
                     GridLayout {
                         Layout.fillWidth: true
-                        columns: 2
+                        Layout.minimumWidth: 0
+                        columns: effectsColumnLayout.width < 250 ? 1 : 2
                         columnSpacing: 4
                         rowSpacing: 4
                         Repeater {
@@ -2691,6 +2703,8 @@ ApplicationWindow {
                         id: effectColorResetButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
                         text: "Сбросить цветовой эффект"
                         contentItem: Text {
                             text: effectColorResetButton.text
@@ -2719,6 +2733,8 @@ ApplicationWindow {
                         id: effectReverseButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
                         text: root.selectedTimelineClip && root.selectedTimelineClip.reverse
                             ? "↶ Отключить реверс" : "↶ Реверс видео + звука"
                         enabled: root.selectedClipCanReverse
@@ -2759,7 +2775,10 @@ ApplicationWindow {
                         id: effectSubtitlesButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        text: mediaTools.transcriptionRunning ? "Распознавание…" : "♫ Создать субтитры из речи"
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
+                        text: mediaTools.transcriptionRunning ? "Распознавание…"
+                            : (root.mediaPanelWidth < 255 ? "♫ Создать субтитры" : "♫ Создать субтитры из речи")
                         contentItem: Text {
                             text: effectSubtitlesButton.text
                             font: effectSubtitlesButton.font
@@ -2788,7 +2807,9 @@ ApplicationWindow {
                         id: effectChooseModelButton
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        text: "Выбрать модель Whisper (.bin)"
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
+                        text: root.mediaPanelWidth < 255 ? "Выбрать модель Whisper…" : "Выбрать модель Whisper (.bin)"
                         contentItem: Text {
                             text: effectChooseModelButton.text
                             font: effectChooseModelButton.font
