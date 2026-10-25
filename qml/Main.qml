@@ -3143,7 +3143,7 @@ ApplicationWindow {
                                             Number(clip.sourceOffset || 0)
                                                 + root.timelineClipDuration(clip) - elapsed - 0.04)
                                         : Math.max(0, Number(clip.sourceOffset || 0) + elapsed))
-                                frameTime = Math.floor(Math.max(0, frameTime) * 2) / 2
+                                frameTime = Math.max(0, frameTime)
                                 return mediaTools.previewFrameAt(frameUrl, frameTime)
                             }
                             fillMode: Image.PreserveAspectFit
