@@ -3559,7 +3559,7 @@ ApplicationWindow {
                         text: "−"
                         Layout.preferredWidth: 28
                         Layout.preferredHeight: 26
-                        onClicked: root.setTimelineZoom(root.timelineZoom - Math.max(1, root.timelineZoom * 0.15))
+                        onClicked: root.setTimelineZoom(root.timelineZoom / 1.15)
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                     }
@@ -3567,17 +3567,17 @@ ApplicationWindow {
                         id: timelineZoomSlider
                         Layout.preferredWidth: 140
                         Layout.minimumWidth: 80
-                        from: 0.05
-                        to: 40
-                        stepSize: 0.05
-                        value: root.timelineZoom
-                        onMoved: root.setTimelineZoom(value)
+                        from: 0
+                        to: 100
+                        stepSize: 0.5
+                        value: 100 * Math.log(Math.max(0.05, root.timelineZoom) / 0.05) / Math.log(40 / 0.05)
+                        onMoved: root.setTimelineZoom(0.05 * Math.pow(40 / 0.05, value / 100))
                     }
                     Button {
                         text: "+"
                         Layout.preferredWidth: 28
                         Layout.preferredHeight: 26
-                        onClicked: root.setTimelineZoom(root.timelineZoom + Math.max(1, root.timelineZoom * 0.15))
+                        onClicked: root.setTimelineZoom(root.timelineZoom * 1.15)
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                     }
