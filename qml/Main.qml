@@ -937,14 +937,29 @@ ApplicationWindow {
         }
         var leftDuration = cutAt - start
         var rightDuration = end - cutAt
+        var baseSourceOffset = Math.max(0, Number(original.sourceOffset || 0))
         original.duration = leftDuration
-        updated[index] = original
-        var rightClip = Object.assign({}, original, {
-            clipId: createTimelineClipId(),
-            start: cutAt,
-            duration: rightDuration,
-            sourceOffset: Math.max(0, Number(original.sourceOffset || 0)) + leftDuration
-        })
+        var rightClip
+        if (original.kind === "video" && original.reverse) {
+            // A reversed clip plays its source from the end toward the start.
+            // The left timeline half therefore references the source's later segment.
+            original.sourceOffset = baseSourceOffset + rightDuration
+            updated[index] = original
+            rightClip = Object.assign({}, original, {
+                clipId: createTimelineClipId(),
+                start: cutAt,
+                duration: rightDuration,
+                sourceOffset: baseSourceOffset
+            })
+        } else {
+            updated[index] = original
+            rightClip = Object.assign({}, original, {
+                clipId: createTimelineClipId(),
+                start: cutAt,
+                duration: rightDuration,
+                sourceOffset: baseSourceOffset + leftDuration
+            })
+        }
         updated.splice(index + 1, 0, rightClip)
         recordTimelineHistory("Разрезать клип")
         mediaFiles = updated
@@ -1058,6 +1073,8 @@ ApplicationWindow {
             var requests = Object.assign({}, reversePreviewRequests)
             delete requests[id]
             reversePreviewRequests = requests
+            updateTimelinePreview(timelinePosition)
+            statusMessage = "Кэш реверса готов"
             return true
         }
         return false
@@ -1768,8 +1785,11 @@ ApplicationWindow {
         videoOutput: videoOutput
         audioOutput: AudioOutput {
             volume: !root.timelinePreviewActive ? 1.0
-                : (timelinePlaybackTimer.running ? 0.0
-                   : root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "volume", 100) / 100)
+                : (timelinePlaybackTimer.running
+                    ? (root.hasTimelineReversePreview(root.timelineFootageAt(root.timelinePosition))
+                        ? root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "volume", 100) / 100
+                        : 0.0)
+                    : root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "volume", 100) / 100)
         }
         onPlaybackStateChanged: root.isPlaying = playbackState === MediaPlayer.PlayingState
         onErrorOccurred: function(error, errorString) {
@@ -3114,7 +3134,17 @@ ApplicationWindow {
                                 var elapsed = Math.max(0, Number(root.timelinePosition)
                                     - Number(clip.start || 0))
                                 elapsed = Math.floor(elapsed * 2) / 2
-                                return mediaTools.previewFrameAt(clip.url, elapsed)
+                                var hasReverseProxy = root.hasTimelineReversePreview(clip)
+                                var frameUrl = root.timelinePlaybackUrl(clip)
+                                var frameTime = hasReverseProxy
+                                    ? elapsed
+                                    : (clip.reverse
+                                        ? Math.max(Number(clip.sourceOffset || 0),
+                                            Number(clip.sourceOffset || 0)
+                                                + root.timelineClipDuration(clip) - elapsed - 0.04)
+                                        : Math.max(0, Number(clip.sourceOffset || 0) + elapsed))
+                                frameTime = Math.floor(Math.max(0, frameTime) * 2) / 2
+                                return mediaTools.previewFrameAt(frameUrl, frameTime)
                             }
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
