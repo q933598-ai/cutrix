@@ -3155,8 +3155,7 @@ ApplicationWindow {
                                 && !root.timelineImageActive
                                 && root.timelineVideoAt(root.timelinePosition) !== null
                                 && root.timelineVideoAt(root.timelinePosition).kind === "video"
-                                && (!timelinePlaybackTimer.running
-                                    || mediaPlayer.playbackState !== MediaPlayer.PlayingState)
+                                && !timelinePlaybackTimer.running
                             opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
                             transform: [
                                 Scale {
