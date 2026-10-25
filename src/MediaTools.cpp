@@ -11,6 +11,7 @@
 #include <QMutexLocker>
 #include <QRunnable>
 #include <QStandardPaths>
+#include <QTextStream>
 #include <QUrl>
 #include <cmath>
 
@@ -49,6 +50,15 @@ MediaTools::MediaTools(QObject *parent) : QObject(parent)
             [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart && m_transcriptionRunning)
             failTranscription(QStringLiteral("Не удалось запустить Whisper. Проверь установку whisper-cli."));
+    });
+    connect(&m_reversePreviewProcess, &QProcess::finished, this,
+            [this](int exitCode, QProcess::ExitStatus status) {
+        handleReversePreviewFinished(exitCode, status);
+    });
+    connect(&m_reversePreviewProcess, &QProcess::errorOccurred, this,
+            [this](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart && m_reversePreviewRunning)
+            failReversePreview(QStringLiteral("Не удалось запустить FFmpeg для реверса."));
     });
 }
 
@@ -181,6 +191,222 @@ QString MediaTools::thumbnailAtSize(const QString &url, double seconds, int maxW
         }, Qt::QueuedConnection);
     }));
     return {};
+}
+
+
+QString MediaTools::prepareReversePreview(const QString &mediaUrl, double sourceOffset,
+                                          double duration, const QString &clipId)
+{
+    if (m_reversePreviewRunning)
+        return QStringLiteral("busy");
+
+    const QString inputPath = localPath(mediaUrl);
+    const QFileInfo inputInfo(inputPath);
+    if (!inputInfo.isFile())
+        return QStringLiteral("error:Исходный видеофайл не найден.");
+    if (!std::isfinite(sourceOffset) || sourceOffset < 0.0
+            || !std::isfinite(duration) || duration <= 0.0)
+        return QStringLiteral("error:Не удалось определить отрезок видео для реверса.");
+
+    m_reversePreviewFfmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (m_reversePreviewFfmpeg.isEmpty())
+        return QStringLiteral("error:Не найден FFmpeg.");
+
+    const QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cacheDir = cacheRoot + QStringLiteral("/reverse-previews");
+    if (cacheRoot.isEmpty() || !QDir().mkpath(cacheDir))
+        return QStringLiteral("error:Не удалось создать кэш предпросмотра реверса.");
+
+    const QByteArray key = QCryptographicHash::hash(
+        (inputInfo.absoluteFilePath() + QLatin1Char('|')
+         + QString::number(inputInfo.size()) + QLatin1Char('|')
+         + QString::number(inputInfo.lastModified().toSecsSinceEpoch()) + QLatin1Char('|')
+         + QString::number(sourceOffset, 'f', 3) + QLatin1Char('|')
+         + QString::number(duration, 'f', 3)
+         + QStringLiteral("|cutrix-reverse-preview-v1|960|24|x264-ultrafast"))
+            .toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString stem = cacheDir + QLatin1Char('/') + QString::fromLatin1(key);
+    const QString outputPath = stem + QStringLiteral(".mp4");
+    if (QFileInfo::exists(outputPath) && QFileInfo(outputPath).size() > 0)
+        return QUrl::fromLocalFile(outputPath).toString();
+
+    m_reversePreviewClipId = clipId;
+    m_reversePreviewSourcePath = inputInfo.absoluteFilePath();
+    m_reversePreviewOutputPath = outputPath;
+    m_reversePreviewListPath = stem + QStringLiteral("-concat.txt");
+    m_reversePreviewSourceOffset = sourceOffset;
+    m_reversePreviewDuration = duration;
+    m_reversePreviewChunkIndex = 0;
+    // Reverse in small, independently encoded segments. FFmpeg's reverse
+    // filter buffers each segment in RAM, so never buffer the entire source clip.
+    constexpr double chunkSeconds = 8.0;
+    m_reversePreviewChunkCount = qMax(1, static_cast<int>(std::ceil(duration / chunkSeconds)));
+    m_reversePreviewChunkPaths.clear();
+    QFile::remove(outputPath);
+    QFile::remove(m_reversePreviewListPath);
+    for (int i = 0; i < m_reversePreviewChunkCount; ++i) {
+        QFile::remove(stem + QStringLiteral("-chunk-%1.mp4").arg(i, 5, 10, QLatin1Char('0')));
+    }
+
+    setReversePreviewRunning(true);
+    startReversePreviewChunk();
+    return QStringLiteral("pending");
+}
+
+void MediaTools::setReversePreviewRunning(bool running)
+{
+    if (m_reversePreviewRunning == running)
+        return;
+    m_reversePreviewRunning = running;
+    emit reversePreviewRunningChanged();
+}
+
+void MediaTools::startReversePreviewChunk()
+{
+    if (!m_reversePreviewRunning)
+        return;
+
+    if (m_reversePreviewChunkIndex >= m_reversePreviewChunkCount) {
+        startReversePreviewConcat();
+        return;
+    }
+
+    constexpr double chunkSeconds = 8.0;
+    // Process chunks from the end towards the start; reversing each chunk and
+    // concatenating in this order yields a continuous reverse-playback proxy.
+    const double segmentEnd = m_reversePreviewDuration
+        - m_reversePreviewChunkIndex * chunkSeconds;
+    const double segmentStart = qMax(0.0, segmentEnd - chunkSeconds);
+    const double segmentDuration = segmentEnd - segmentStart;
+    const double inputSeek = m_reversePreviewSourceOffset + segmentStart;
+    const QFileInfo outputInfo(m_reversePreviewOutputPath);
+    const QString stem = outputInfo.absolutePath() + QLatin1Char('/')
+        + outputInfo.completeBaseName();
+    const QString chunkPath = stem + QStringLiteral("-chunk-%1.mp4")
+        .arg(m_reversePreviewChunkIndex, 5, 10, QLatin1Char('0'));
+    QFile::remove(chunkPath);
+    m_reversePreviewStage = QStringLiteral("chunk");
+
+    m_reversePreviewProcess.setProgram(m_reversePreviewFfmpeg);
+    m_reversePreviewProcess.setArguments({
+        QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+        QStringLiteral("-y"), QStringLiteral("-threads"), QStringLiteral("2"),
+        QStringLiteral("-ss"), QString::number(inputSeek, 'f', 3),
+        QStringLiteral("-t"), QString::number(segmentDuration, 'f', 3),
+        QStringLiteral("-i"), m_reversePreviewSourcePath,
+        QStringLiteral("-an"),
+        QStringLiteral("-vf"),
+        QStringLiteral("scale='min(960\\,iw)':-2,fps=24,reverse,setpts=PTS-STARTPTS"),
+        QStringLiteral("-c:v"), QStringLiteral("libx264"),
+        QStringLiteral("-preset"), QStringLiteral("ultrafast"),
+        QStringLiteral("-crf"), QStringLiteral("25"),
+        QStringLiteral("-pix_fmt"), QStringLiteral("yuv420p"),
+        QStringLiteral("-movflags"), QStringLiteral("+faststart"),
+        chunkPath
+    });
+    m_reversePreviewProcess.start();
+}
+
+void MediaTools::startReversePreviewConcat()
+{
+    QFile listFile(m_reversePreviewListPath);
+    if (!listFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        failReversePreview(QStringLiteral("Не удалось создать список сегментов реверса."));
+        return;
+    }
+    QTextStream stream(&listFile);
+    for (const QString &path : std::as_const(m_reversePreviewChunkPaths)) {
+        QString escaped = path;
+        escaped.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
+        escaped.replace(QStringLiteral("'"), QStringLiteral("\\'"));
+        stream << QStringLiteral("file '") << escaped << QStringLiteral("'\n");
+    }
+    listFile.close();
+
+    m_reversePreviewStage = QStringLiteral("concat");
+    m_reversePreviewProcess.setProgram(m_reversePreviewFfmpeg);
+    m_reversePreviewProcess.setArguments({
+        QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+        QStringLiteral("-y"), QStringLiteral("-f"), QStringLiteral("concat"),
+        QStringLiteral("-safe"), QStringLiteral("0"),
+        QStringLiteral("-i"), m_reversePreviewListPath,
+        QStringLiteral("-c"), QStringLiteral("copy"),
+        QStringLiteral("-movflags"), QStringLiteral("+faststart"),
+        m_reversePreviewOutputPath
+    });
+    m_reversePreviewProcess.start();
+}
+
+void MediaTools::handleReversePreviewFinished(int exitCode, QProcess::ExitStatus status)
+{
+    if (!m_reversePreviewRunning)
+        return;
+
+    const QString details = QString::fromLocal8Bit(
+        m_reversePreviewProcess.readAllStandardError()).trimmed();
+    if (status != QProcess::NormalExit || exitCode != 0) {
+        failReversePreview(details.isEmpty()
+            ? QStringLiteral("FFmpeg не смог подготовить предпросмотр реверса.")
+            : details.left(400));
+        return;
+    }
+
+    if (m_reversePreviewStage == QStringLiteral("chunk")) {
+        const QFileInfo outputInfo(m_reversePreviewOutputPath);
+        const QString stem = outputInfo.absolutePath() + QLatin1Char('/')
+            + outputInfo.completeBaseName();
+        const QString chunkPath = stem + QStringLiteral("-chunk-%1.mp4")
+            .arg(m_reversePreviewChunkIndex, 5, 10, QLatin1Char('0'));
+        if (!QFileInfo::exists(chunkPath) || QFileInfo(chunkPath).size() == 0) {
+            failReversePreview(QStringLiteral("FFmpeg создал пустой сегмент реверса."));
+            return;
+        }
+        m_reversePreviewChunkPaths.push_back(chunkPath);
+        ++m_reversePreviewChunkIndex;
+        startReversePreviewChunk();
+        return;
+    }
+
+    if (m_reversePreviewStage == QStringLiteral("concat")) {
+        if (!QFileInfo::exists(m_reversePreviewOutputPath)
+                || QFileInfo(m_reversePreviewOutputPath).size() == 0) {
+            failReversePreview(QStringLiteral("Не удалось собрать предпросмотр реверса."));
+            return;
+        }
+
+        const QString clipId = m_reversePreviewClipId;
+        const QString previewUrl = QUrl::fromLocalFile(m_reversePreviewOutputPath).toString();
+        QFile::remove(m_reversePreviewListPath);
+        for (const QString &path : std::as_const(m_reversePreviewChunkPaths))
+            QFile::remove(path);
+        m_reversePreviewChunkPaths.clear();
+        m_reversePreviewStage.clear();
+        setReversePreviewRunning(false);
+        emit reversePreviewReady(clipId, previewUrl);
+        m_reversePreviewClipId.clear();
+        return;
+    }
+
+    failReversePreview(QStringLiteral("Неизвестное состояние предпросмотра реверса."));
+}
+
+void MediaTools::failReversePreview(const QString &message)
+{
+    if (!m_reversePreviewRunning)
+        return;
+    const QString clipId = m_reversePreviewClipId;
+    QFile::remove(m_reversePreviewOutputPath);
+    QFile::remove(m_reversePreviewListPath);
+    const QFileInfo outputInfo(m_reversePreviewOutputPath);
+    const QString stem = outputInfo.absolutePath() + QLatin1Char('/')
+        + outputInfo.completeBaseName();
+    for (int i = 0; i < m_reversePreviewChunkCount; ++i)
+        QFile::remove(stem + QStringLiteral("-chunk-%1.mp4").arg(i, 5, 10, QLatin1Char('0')));
+    m_reversePreviewChunkPaths.clear();
+    m_reversePreviewStage.clear();
+    setReversePreviewRunning(false);
+    emit reversePreviewFailed(clipId, message);
+    m_reversePreviewClipId.clear();
 }
 
 
