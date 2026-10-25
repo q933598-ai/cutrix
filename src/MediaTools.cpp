@@ -12,6 +12,7 @@
 #include <QRunnable>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <utility>
 #include <QUrl>
 #include <cmath>
 
