@@ -315,7 +315,9 @@ void MediaTools::startReversePreviewChunk()
                   << QStringLiteral("[0:v:0]%1[v];"
                                     "[0:a:0]aresample=48000,"
                                     "aformat=sample_fmts=fltp:channel_layouts=stereo,"
-                                    "areverse,asetpts=PTS-STARTPTS[a]").arg(videoFilters)
+                                    "areverse,asetpts=PTS-STARTPTS,apad,"
+                                    "atrim=duration=%2,asetpts=PTS-STARTPTS[a]")
+                         .arg(videoFilters, QString::number(segmentDuration, 'f', 3))
                   << QStringLiteral("-map") << QStringLiteral("[v]")
                   << QStringLiteral("-map") << QStringLiteral("[a]");
     } else {
@@ -330,8 +332,7 @@ void MediaTools::startReversePreviewChunk()
         arguments << QStringLiteral("-c:a") << QStringLiteral("aac")
                   << QStringLiteral("-b:a") << QStringLiteral("128k")
                   << QStringLiteral("-ar") << QStringLiteral("48000")
-                  << QStringLiteral("-ac") << QStringLiteral("2")
-                  << QStringLiteral("-shortest");
+                  << QStringLiteral("-ac") << QStringLiteral("2");
     }
     arguments << QStringLiteral("-movflags") << QStringLiteral("+faststart")
               << chunkPath;
