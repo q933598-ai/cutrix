@@ -58,6 +58,7 @@ private:
     QProcess m_reversePreviewProcess;
     bool m_transcriptionRunning = false;
     bool m_reversePreviewRunning = false;
+    bool m_reversePreviewHasAudio = false;
     QString m_reversePreviewStage;
     QString m_reversePreviewClipId;
     QString m_reversePreviewSourcePath;
