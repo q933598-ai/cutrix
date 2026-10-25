@@ -80,9 +80,12 @@ ApplicationWindow {
     // editing horizon starts at 20 minutes and doubles as clips move further out.
     property real timelineZoom: 4
     property real timelineDragHorizon: 0
+    // Kept between scroll gestures: reaching the right edge should reveal
+    // another block of workspace even when the user isn't dragging a clip.
+    property real timelineWorkspaceDemand: 0
     property int timelineAutoScrollDirection: 0
     readonly property real timelineWorkspaceDuration:
-        timelineWorkspaceForDuration(Math.max(timelineDuration, timelineDragHorizon))
+        timelineWorkspaceForDuration(Math.max(timelineDuration, timelineDragHorizon, timelineWorkspaceDemand))
     // Все элементы таймлайна используют один масштаб, чтобы линейка,
     // клипы и ползунок совпадали по времени.
     property real timelineDuration: {
@@ -3600,6 +3603,14 @@ ApplicationWindow {
                         contentHeight: timelineCanvas.height
                         flickableDirection: Flickable.HorizontalFlick
                         boundsBehavior: Flickable.StopAtBounds
+                        onContentXChanged: {
+                            if (width <= 0 || root.timelineZoom <= 0) return
+                            var maxX = Math.max(0, timelineCanvas.width - width)
+                            if (contentX >= maxX - Math.max(24, width * 0.02)) {
+                                var edgeTime = (contentX + width) / root.timelineZoom
+                                root.timelineWorkspaceDemand = Math.max(root.timelineWorkspaceDemand, edgeTime + 120)
+                            }
+                        }
                         ScrollBar.horizontal: ScrollBar {
                             policy: ScrollBar.AsNeeded
                         }
