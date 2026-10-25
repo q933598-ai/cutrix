@@ -235,7 +235,7 @@ QString MediaTools::prepareReversePreview(const QString &mediaUrl, double source
          + QString::number(inputInfo.lastModified().toSecsSinceEpoch()) + QLatin1Char('|')
          + QString::number(sourceOffset, 'f', 3) + QLatin1Char('|')
          + QString::number(duration, 'f', 3)
-         + QStringLiteral("|cutrix-reverse-preview-v2|960|24|x264-ultrafast|audio=")
+         + QStringLiteral("|cutrix-reverse-preview-v3|720|20|x264-ultrafast|audio=")
          + (m_reversePreviewHasAudio ? QStringLiteral("1") : QStringLiteral("0")))
             .toUtf8(), QCryptographicHash::Sha256).toHex();
     const QString stem = cacheDir + QLatin1Char('/') + QString::fromLatin1(key);
@@ -309,7 +309,7 @@ void MediaTools::startReversePreviewChunk()
         QStringLiteral("-i"), m_reversePreviewSourcePath
     };
     const QString videoFilters =
-        QStringLiteral("scale='min(960\\,iw)':-2,fps=24,reverse,setpts=PTS-STARTPTS");
+        QStringLiteral("scale='min(720\\,iw)':-2,fps=20,reverse,setpts=PTS-STARTPTS");
     if (m_reversePreviewHasAudio) {
         arguments << QStringLiteral("-filter_complex")
                   << QStringLiteral("[0:v:0]%1[v];"
