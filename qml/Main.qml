@@ -5328,7 +5328,19 @@ ApplicationWindow {
                                                     var previewY = Math.max(-timelineClip.height - 2,
                                                                             Math.min(timelineTrack.height + 2,
                                                                                      dragStartClipY + dy))
-                                                    var proposedEnd = previewX / Math.max(0.001, timelineCanvas.timelineScale)
+                                                    var dragScale = Math.max(0.001, timelineCanvas.timelineScale)
+                                                    var requestedTrack = Math.max(0, Math.min(5,
+                                                        Math.floor((scenePos.y - 23.5) / 37)))
+                                                    var previewTrack = root.timelineTrackForKind(
+                                                        timelineClip.modelData.kind, requestedTrack)
+                                                    var previewStart = root.findFreeTimelineStart(previewTrack,
+                                                        previewX / dragScale,
+                                                        root.timelineClipDuration(timelineClip.modelData),
+                                                        String(timelineClip.modelData.clipId || ""))
+                                                    // Keep the dragged clip preview collision-free too, instead of
+                                                    // letting it visually merge with a neighbor until mouse release.
+                                                    previewX = previewStart * dragScale
+                                                    var proposedEnd = previewStart
                                                         + root.timelineClipDuration(timelineClip.modelData)
                                                     root.timelineDragHorizon = Math.max(root.timelineDragHorizon, proposedEnd)
                                                     var viewportPoint = mapToItem(timelineViewport, mouse.x, mouse.y)
