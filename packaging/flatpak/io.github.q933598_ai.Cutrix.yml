@@ -1,0 +1,75 @@
+app-id: io.github.q933598_ai.Cutrix
+runtime: org.kde.Platform
+runtime-version: '6.11'
+sdk: org.kde.Sdk
+command: cutrix
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --env=QT_FFMPEG_DECODING_HW_DEVICE_TYPES=,
+  - --env=QT_QUICK_CONTROLS_STYLE=Basic
+
+modules:
+  - name: x264
+    buildsystem: autotools
+    config-opts:
+      - --disable-cli
+      - --enable-shared
+    sources:
+      - type: git
+        url: https://github.com/mirror/x264.git
+        commit: 31e19f92f00c7003fa115047ce50978bc98c3a0d
+
+  - name: ffmpeg
+    buildsystem: autotools
+    config-opts:
+      - --enable-rpath
+      - --enable-gpl
+      - --disable-static
+      - --enable-shared
+      - --disable-doc
+      - --disable-debug
+      - --disable-ffplay
+      - --disable-alsa
+      - --disable-network
+      - --enable-libfontconfig
+      - --enable-libfreetype
+      - --enable-libx264
+      - --enable-ffmpeg
+      - --enable-ffprobe
+    sources:
+      - type: git
+        url: https://github.com/FFmpeg/FFmpeg.git
+        commit: df8dce0eb35161ddf86f1979d1ed6af020f49b11
+
+  - name: whisper.cpp
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTING=OFF
+      - -DWHISPER_BUILD_TESTS=OFF
+      - -DWHISPER_BUILD_EXAMPLES=ON
+      - -DWHISPER_BUILD_SERVER=OFF
+      - -DGGML_NATIVE=OFF
+    post-install:
+      - install -Dm755 bin/whisper-cli -t /app/bin
+    sources:
+      - type: archive
+        url: https://github.com/ggerganov/whisper.cpp/archive/refs/tags/v1.8.3.tar.gz
+        sha256: 870ba21409cdf66697dc4db15ebdb13bc67037d76c7cc63756c81471d8f1731a
+
+  - name: cutrix
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/app
+    sources:
+      - type: git
+        url: https://github.com/q933598-ai/cutrix.git
+        branch: test/ui-prototype
