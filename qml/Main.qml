@@ -3259,6 +3259,15 @@ ApplicationWindow {
                             border.color: theme.border
                             clip: true
 
+                        // Flatten the actual base preview into one full-size texture.
+                        // FX blur must sample the composited frame in canvas coordinates,
+                        // not a transformed VideoOutput's local rectangle.
+                        Item {
+                            id: timelineBasePreviewLayer
+                            anchors.fill: parent
+                            clip: true
+                            layer.enabled: true
+
                         VideoOutput {
                             id: videoOutput
                             anchors.fill: parent
@@ -3420,9 +3429,9 @@ ApplicationWindow {
                             }
                             z: 1
                         }
+                        }
 
-                        // Use the live preview item directly. An extra ShaderEffectSource
-                        // was rescaling its texture and made the FX area look like a mini-frame.
+                        // Apply blur to the flattened full-size frame, clipped by the FX mask.
                         Item {
                             id: timelineBlurPreviewMaskShape
                             anchors.fill: parent
@@ -3455,10 +3464,9 @@ ApplicationWindow {
                         }
                         MultiEffect {
                             id: timelineBlurPreviewEffect
-                            anchors.fill: parent
+                            anchors.fill: timelineBasePreviewLayer
                             z: 2
-                            source: root.timelineImageActive ? timelineImagePreview
-                                : (timelinePlaybackTimer.running ? videoOutput : timelineVideoStillPreview)
+                            source: timelineBasePreviewLayer
                             visible: root.timelinePreviewActive
                                 && root.previewBlurEffect() !== null
                                 && root.timelineVideoAt(root.timelinePosition) !== null
