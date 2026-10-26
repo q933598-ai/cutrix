@@ -4,3 +4,7 @@
 *.user
 *.swp
 .DS_Store
+/build-flatpak/
+/.flatpak-builder/
+*.pkg.tar.zst
+*.flatpak
