@@ -3238,277 +3238,276 @@ ApplicationWindow {
                     Item { Layout.fillHeight: true }
                     }
                 }
-            }
+                ScrollView {
+                    id: audioScroll
+                    anchors.fill: parent
+                    visible: root.activeSidebarSection === "Аудио"
+                    clip: true
+                    contentWidth: availableWidth
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-            ScrollView {
-                id: audioScroll
-                anchors.fill: parent
-                visible: root.activeSidebarSection === "Аудио"
-                clip: true
-                contentWidth: availableWidth
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    ColumnLayout {
+                        id: audioColumnLayout
+                        x: 9
+                        width: Math.max(1, audioScroll.availableWidth - 18)
+                        spacing: 9
 
-                ColumnLayout {
-                    id: audioColumnLayout
-                    x: 9
-                    width: Math.max(1, audioScroll.availableWidth - 18)
-                    spacing: 9
-
-                    Text {
-                        text: "АУДИО КЛИПА"
-                        color: theme.accent
-                        font.family: "monospace"
-                        font.bold: true
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: root.selectedClipCanAudio
-                            ? String(root.selectedTimelineClip.name || "Выбранный клип")
-                            : "Выбери аудиоклип или видеоклип на таймлайне, чтобы редактировать его звук."
-                        color: root.selectedClipCanAudio ? theme.text : theme.muted
-                        font.family: "monospace"
-                        font.pixelSize: 11 * root.uiFontScale / 100
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-
-                    Text {
-                        text: "ГРОМКОСТЬ И ПАНОРАМА"
-                        color: theme.muted
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text { text: "Громкость"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                        Slider {
-                            Layout.fillWidth: true
-                            from: 0; to: 200; stepSize: 1
-                            enabled: root.selectedClipCanAudio
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
-                            onPressedChanged: if (pressed) root.recordTimelineHistory("Настройки аудио")
-                            onMoved: root.setSelectedClipProperty("volume", value, true, false)
+                        Text {
+                            text: "АУДИО КЛИПА"
+                            color: theme.accent
+                            font.family: "monospace"
+                            font.bold: true
                         }
                         Text {
-                            text: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)) + "%"
-                            color: theme.accent; font.family: "monospace"; font.pixelSize: 10
-                            Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
-                        }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text { text: "Панорама"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                        Slider {
                             Layout.fillWidth: true
-                            from: -100; to: 100; stepSize: 1
-                            enabled: root.selectedClipCanAudio
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "audioPan", 0)
-                            onPressedChanged: if (pressed) root.recordTimelineHistory("Панорама звука")
-                            onMoved: root.setSelectedClipProperty("audioPan", value, true, false)
+                            text: root.selectedClipCanAudio
+                                ? String(root.selectedTimelineClip.name || "Выбранный клип")
+                                : "Выбери аудиоклип или видеоклип на таймлайне, чтобы редактировать его звук."
+                            color: root.selectedClipCanAudio ? theme.text : theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 11 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
                         }
-                        Text {
-                            text: {
-                                var pan = Math.round(root.timelineClipProperty(root.selectedTimelineClip, "audioPan", 0))
-                                return pan < -3 ? "L " + Math.abs(pan) : pan > 3 ? "R " + pan : "C"
-                            }
-                            color: theme.accent; font.family: "monospace"; font.pixelSize: 10
-                            Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
-                        }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text { text: "Появление"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                        Slider {
-                            Layout.fillWidth: true
-                            from: 0; to: 10; stepSize: 0.1
-                            enabled: root.selectedClipCanAudio
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "audioFadeIn", 0)
-                            onPressedChanged: if (pressed) root.recordTimelineHistory("Появление звука")
-                            onMoved: root.setSelectedClipProperty("audioFadeIn", value, true, false)
-                        }
-                        Text {
-                            text: Number(root.timelineClipProperty(root.selectedTimelineClip, "audioFadeIn", 0)).toFixed(1) + "с"
-                            color: theme.accent; font.family: "monospace"; font.pixelSize: 10
-                            Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
-                        }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text { text: "Затухание"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                        Slider {
-                            Layout.fillWidth: true
-                            from: 0; to: 10; stepSize: 0.1
-                            enabled: root.selectedClipCanAudio
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "audioFadeOut", 0)
-                            onPressedChanged: if (pressed) root.recordTimelineHistory("Затухание звука")
-                            onMoved: root.setSelectedClipProperty("audioFadeOut", value, true, false)
-                        }
-                        Text {
-                            text: Number(root.timelineClipProperty(root.selectedTimelineClip, "audioFadeOut", 0)).toFixed(1) + "с"
-                            color: theme.accent; font.family: "monospace"; font.pixelSize: 10
-                            Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
-                        }
-                    }
-                    CheckBox {
-                        text: "Отключить звук клипа"
-                        enabled: root.selectedClipCanAudio
-                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioMuted)
-                        onToggled: root.setSelectedClipProperties({ audioMuted: checked },
-                            checked ? "Отключить звук клипа" : "Включить звук клипа")
-                        palette.text: theme.text
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
 
-                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                    Text {
-                        text: "10-ПОЛОСНЫЙ ЭКВАЛАЙЗЕР · ±12 dB"
-                        color: theme.muted
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    GridLayout {
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 0
-                        columns: audioColumnLayout.width < 250 ? 1 : 2
-                        columnSpacing: 4
-                        rowSpacing: 4
-                        Repeater {
-                            model: [
-                                { label: "Ровный", preset: "flat" },
-                                { label: "Басы", preset: "bass" },
-                                { label: "Речь", preset: "voice" },
-                                { label: "Высокие", preset: "treble" },
-                                { label: "Рок", preset: "rock" }
-                            ]
-                            delegate: Button {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.preferredHeight: 30
-                                enabled: root.selectedClipCanAudio
-                                text: modelData.label
-                                font.family: "monospace"
-                                font.pixelSize: 10
-                                onClicked: root.applyAudioPreset(modelData.preset)
-                                palette.buttonText: theme.text
-                                background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
-                            }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+
+                        Text {
+                            text: "ГРОМКОСТЬ И ПАНОРАМА"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
                         }
-                    }
-                    Repeater {
-                        model: [
-                            { label: "31 Hz", key: "eq31" },
-                            { label: "62 Hz", key: "eq62" },
-                            { label: "125 Hz", key: "eq125" },
-                            { label: "250 Hz", key: "eq250" },
-                            { label: "500 Hz", key: "eq500" },
-                            { label: "1 kHz", key: "eq1000" },
-                            { label: "2 kHz", key: "eq2000" },
-                            { label: "4 kHz", key: "eq4000" },
-                            { label: "8 kHz", key: "eq8000" },
-                            { label: "16 kHz", key: "eq16000" }
-                        ]
-                        delegate: RowLayout {
-                            required property var modelData
+                        RowLayout {
                             Layout.fillWidth: true
-                            spacing: 4
-                            Text {
-                                text: modelData.label
-                                color: theme.text
-                                font.family: "monospace"
-                                font.pixelSize: 9
-                                Layout.preferredWidth: 43
-                            }
+                            Text { text: "Громкость"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
                             Slider {
                                 Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                from: -12; to: 12; stepSize: 1
+                                from: 0; to: 200; stepSize: 1
                                 enabled: root.selectedClipCanAudio
-                                value: root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0)
-                                onPressedChanged: if (pressed) root.recordTimelineHistory("Эквалайзер")
-                                onMoved: root.setSelectedClipProperty(modelData.key, value, true, false)
+                                value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
+                                onPressedChanged: if (pressed) root.recordTimelineHistory("Настройки аудио")
+                                onMoved: root.setSelectedClipProperty("volume", value, true, false)
+                            }
+                            Text {
+                                text: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)) + "%"
+                                color: theme.accent; font.family: "monospace"; font.pixelSize: 10
+                                Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Панорама"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
+                            Slider {
+                                Layout.fillWidth: true
+                                from: -100; to: 100; stepSize: 1
+                                enabled: root.selectedClipCanAudio
+                                value: root.timelineClipProperty(root.selectedTimelineClip, "audioPan", 0)
+                                onPressedChanged: if (pressed) root.recordTimelineHistory("Панорама звука")
+                                onMoved: root.setSelectedClipProperty("audioPan", value, true, false)
                             }
                             Text {
                                 text: {
-                                    var gain = Math.round(root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0))
-                                    return (gain > 0 ? "+" : "") + gain + " dB"
+                                    var pan = Math.round(root.timelineClipProperty(root.selectedTimelineClip, "audioPan", 0))
+                                    return pan < -3 ? "L " + Math.abs(pan) : pan > 3 ? "R " + pan : "C"
                                 }
-                                color: theme.accent
-                                font.family: "monospace"
-                                font.pixelSize: 9
-                                Layout.preferredWidth: 34
-                                horizontalAlignment: Text.AlignRight
+                                color: theme.accent; font.family: "monospace"; font.pixelSize: 10
+                                Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
                             }
                         }
-                    }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Появление"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
+                            Slider {
+                                Layout.fillWidth: true
+                                from: 0; to: 10; stepSize: 0.1
+                                enabled: root.selectedClipCanAudio
+                                value: root.timelineClipProperty(root.selectedTimelineClip, "audioFadeIn", 0)
+                                onPressedChanged: if (pressed) root.recordTimelineHistory("Появление звука")
+                                onMoved: root.setSelectedClipProperty("audioFadeIn", value, true, false)
+                            }
+                            Text {
+                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "audioFadeIn", 0)).toFixed(1) + "с"
+                                color: theme.accent; font.family: "monospace"; font.pixelSize: 10
+                                Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Затухание"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
+                            Slider {
+                                Layout.fillWidth: true
+                                from: 0; to: 10; stepSize: 0.1
+                                enabled: root.selectedClipCanAudio
+                                value: root.timelineClipProperty(root.selectedTimelineClip, "audioFadeOut", 0)
+                                onPressedChanged: if (pressed) root.recordTimelineHistory("Затухание звука")
+                                onMoved: root.setSelectedClipProperty("audioFadeOut", value, true, false)
+                            }
+                            Text {
+                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "audioFadeOut", 0)).toFixed(1) + "с"
+                                color: theme.accent; font.family: "monospace"; font.pixelSize: 10
+                                Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                        CheckBox {
+                            text: "Отключить звук клипа"
+                            enabled: root.selectedClipCanAudio
+                            checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioMuted)
+                            onToggled: root.setSelectedClipProperties({ audioMuted: checked },
+                                checked ? "Отключить звук клипа" : "Включить звук клипа")
+                            palette.text: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
 
-                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                    Text {
-                        text: "ОБРАБОТКА ЗВУКА"
-                        color: theme.muted
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    CheckBox {
-                        text: "Нормализация громкости"
-                        enabled: root.selectedClipCanAudio
-                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioNormalize)
-                        onToggled: root.setSelectedClipProperties({ audioNormalize: checked },
-                            "Нормализация громкости")
-                        palette.text: theme.text
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    CheckBox {
-                        text: "Компрессор"
-                        enabled: root.selectedClipCanAudio
-                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioCompressor)
-                        onToggled: root.setSelectedClipProperties({ audioCompressor: checked },
-                            "Компрессор аудио")
-                        palette.text: theme.text
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    CheckBox {
-                        text: "Шумоподавление"
-                        enabled: root.selectedClipCanAudio
-                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioDenoise)
-                        onToggled: root.setSelectedClipProperties({ audioDenoise: checked },
-                            "Шумоподавление аудио")
-                        palette.text: theme.text
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    CheckBox {
-                        text: "Лимитер пиков"
-                        enabled: root.selectedClipCanAudio
-                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioLimiter)
-                        onToggled: root.setSelectedClipProperties({ audioLimiter: checked },
-                            "Лимитер аудио")
-                        palette.text: theme.text
-                        font.family: "monospace"
-                        font.pixelSize: 10 * root.uiFontScale / 100
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 0
-                        enabled: root.selectedClipCanAudio
-                        text: "↺ Сбросить настройки звука"
-                        font.family: "monospace"
-                        font.pixelSize: 10
-                        onClicked: root.resetAudioSettings()
-                        palette.buttonText: theme.text
-                        background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: "Настройки сохраняются в проекте и применяются при экспорте. Предпрослушивание EQ в реальном времени пока не подключено."
-                        color: theme.muted
-                        font.family: "monospace"
-                        font.pixelSize: 9 * root.uiFontScale / 100
-                        wrapMode: Text.WordWrap
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        Text {
+                            text: "10-ПОЛОСНЫЙ ЭКВАЛАЙЗЕР · ±12 dB"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        GridLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            columns: audioColumnLayout.width < 250 ? 1 : 2
+                            columnSpacing: 4
+                            rowSpacing: 4
+                            Repeater {
+                                model: [
+                                    { label: "Ровный", preset: "flat" },
+                                    { label: "Басы", preset: "bass" },
+                                    { label: "Речь", preset: "voice" },
+                                    { label: "Высокие", preset: "treble" },
+                                    { label: "Рок", preset: "rock" }
+                                ]
+                                delegate: Button {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    Layout.preferredHeight: 30
+                                    enabled: root.selectedClipCanAudio
+                                    text: modelData.label
+                                    font.family: "monospace"
+                                    font.pixelSize: 10
+                                    onClicked: root.applyAudioPreset(modelData.preset)
+                                    palette.buttonText: theme.text
+                                    background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                                }
+                            }
+                        }
+                        Repeater {
+                            model: [
+                                { label: "31 Hz", key: "eq31" },
+                                { label: "62 Hz", key: "eq62" },
+                                { label: "125 Hz", key: "eq125" },
+                                { label: "250 Hz", key: "eq250" },
+                                { label: "500 Hz", key: "eq500" },
+                                { label: "1 kHz", key: "eq1000" },
+                                { label: "2 kHz", key: "eq2000" },
+                                { label: "4 kHz", key: "eq4000" },
+                                { label: "8 kHz", key: "eq8000" },
+                                { label: "16 kHz", key: "eq16000" }
+                            ]
+                            delegate: RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 4
+                                Text {
+                                    text: modelData.label
+                                    color: theme.text
+                                    font.family: "monospace"
+                                    font.pixelSize: 9
+                                    Layout.preferredWidth: 43
+                                }
+                                Slider {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    from: -12; to: 12; stepSize: 1
+                                    enabled: root.selectedClipCanAudio
+                                    value: root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0)
+                                    onPressedChanged: if (pressed) root.recordTimelineHistory("Эквалайзер")
+                                    onMoved: root.setSelectedClipProperty(modelData.key, value, true, false)
+                                }
+                                Text {
+                                    text: {
+                                        var gain = Math.round(root.timelineClipProperty(root.selectedTimelineClip, modelData.key, 0))
+                                        return (gain > 0 ? "+" : "") + gain + " dB"
+                                    }
+                                    color: theme.accent
+                                    font.family: "monospace"
+                                    font.pixelSize: 9
+                                    Layout.preferredWidth: 34
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        Text {
+                            text: "ОБРАБОТКА ЗВУКА"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        CheckBox {
+                            text: "Нормализация громкости"
+                            enabled: root.selectedClipCanAudio
+                            checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioNormalize)
+                            onToggled: root.setSelectedClipProperties({ audioNormalize: checked },
+                                "Нормализация громкости")
+                            palette.text: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        CheckBox {
+                            text: "Компрессор"
+                            enabled: root.selectedClipCanAudio
+                            checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioCompressor)
+                            onToggled: root.setSelectedClipProperties({ audioCompressor: checked },
+                                "Компрессор аудио")
+                            palette.text: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        CheckBox {
+                            text: "Шумоподавление"
+                            enabled: root.selectedClipCanAudio
+                            checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioDenoise)
+                            onToggled: root.setSelectedClipProperties({ audioDenoise: checked },
+                                "Шумоподавление аудио")
+                            palette.text: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        CheckBox {
+                            text: "Лимитер пиков"
+                            enabled: root.selectedClipCanAudio
+                            checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioLimiter)
+                            onToggled: root.setSelectedClipProperties({ audioLimiter: checked },
+                                "Лимитер аудио")
+                            palette.text: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        Button {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            enabled: root.selectedClipCanAudio
+                            text: "↺ Сбросить настройки звука"
+                            font.family: "monospace"
+                            font.pixelSize: 10
+                            onClicked: root.resetAudioSettings()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Настройки сохраняются в проекте и применяются при экспорте. Предпрослушивание EQ в реальном времени пока не подключено."
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 9 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
+                        }
                     }
                 }
             }
