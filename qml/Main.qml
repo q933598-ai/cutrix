@@ -3421,17 +3421,8 @@ ApplicationWindow {
                             z: 1
                         }
 
-                        // Duplicate the current image/video and mask the blur to a movable region.
-                        ShaderEffectSource {
-                            id: timelineBlurPreviewSource
-                            anchors.fill: parent
-                            sourceItem: root.timelineImageActive ? timelineImagePreview
-                                : (timelinePlaybackTimer.running ? videoOutput : timelineVideoStillPreview)
-                            live: true
-                            hideSource: false
-                            recursive: false
-                            visible: false
-                        }
+                        // Use the live preview item directly. An extra ShaderEffectSource
+                        // was rescaling its texture and made the FX area look like a mini-frame.
                         Item {
                             id: timelineBlurPreviewMaskShape
                             anchors.fill: parent
@@ -3466,7 +3457,8 @@ ApplicationWindow {
                             id: timelineBlurPreviewEffect
                             anchors.fill: parent
                             z: 2
-                            source: timelineBlurPreviewSource
+                            source: root.timelineImageActive ? timelineImagePreview
+                                : (timelinePlaybackTimer.running ? videoOutput : timelineVideoStillPreview)
                             visible: root.timelinePreviewActive
                                 && root.previewBlurEffect() !== null
                                 && root.timelineVideoAt(root.timelinePosition) !== null
