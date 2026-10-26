@@ -51,6 +51,7 @@ private:
         double brightness = 0.0;
         double contrast = 0.0;
         double saturation = 0.0;
+        double blur = 0.0;
         double fontSize = 42.0;
         QString fontFamily = QStringLiteral("Sans");
         QString textColor = QStringLiteral("#ffffff");
