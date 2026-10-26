@@ -1,5 +1,6 @@
 # Maintainer: Cutrix contributors
 # Development package from test/ui-prototype. Switch _branch to main for a release build.
+_branch=test/ui-prototype
 
 pkgname=cutrix-git
 pkgver=0.1.0.r209.g17dccd6
@@ -13,7 +14,7 @@ makedepends=('base-devel' 'cmake' 'ninja' 'git')
 optdepends=('whisper.cpp: local automatic subtitles via whisper-cli')
 provides=('cutrix')
 conflicts=('cutrix')
-source=("cutrix::git+https://github.com/q933598-ai/cutrix.git#branch=test/ui-prototype")
+source=("cutrix::git+https://github.com/q933598-ai/cutrix.git#branch=${_branch}")
 sha256sums=('SKIP')
 
 pkgver() {
