@@ -1986,7 +1986,12 @@ ApplicationWindow {
                     pause()
                     return
                 }
-                var target = Math.max(0, root.timelinePosition - Number(modelData.start || 0)) * 1000
+                // A split clip keeps the original source file and stores the
+                // offset of its segment in sourceOffset. Seek into that segment,
+                // not back to the file's beginning when the playhead enters it.
+                var localTime = Math.max(0, root.timelinePosition - Number(modelData.start || 0))
+                var sourceOffset = Math.max(0, Number(modelData.sourceOffset || 0))
+                var target = (sourceOffset + localTime) * 1000
                 if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
                     if (Math.abs(position - target) > 350) position = target
                     if (playbackState !== MediaPlayer.PlayingState) play()
