@@ -2141,6 +2141,7 @@ ApplicationWindow {
                 var player = timelineAudioPlayers.objectAt(i)
                 if (player) player.syncToTimeline()
             }
+            root.syncTimelineUnderlay(root.timelinePosition)
         }
         function onTriggered() {
             for (var i = 0; i < timelineAudioPlayers.count; ++i) {
