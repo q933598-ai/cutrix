@@ -790,7 +790,10 @@ ApplicationWindow {
                 return imageSize.width * Math.min(previewCanvas.width / imageSize.width,
                                                   previewCanvas.height / imageSize.height)
         } else if (item && item.kind === "video") {
-            var videoRect = videoOutput.contentRect
+            var isUnderlay = String(item.clipId || "") !== ""
+                && String(item.clipId || "") === String(timelineUnderlayClipId || "")
+            var videoRect = isUnderlay
+                ? timelineUnderlayVideoOutput.contentRect : videoOutput.contentRect
             if (videoRect.width > 0 && videoRect.height > 0)
                 return videoRect.width
         }
@@ -805,7 +808,10 @@ ApplicationWindow {
                 return imageSize.height * Math.min(previewCanvas.width / imageSize.width,
                                                    previewCanvas.height / imageSize.height)
         } else if (item && item.kind === "video") {
-            var videoRect = videoOutput.contentRect
+            var isUnderlay = String(item.clipId || "") !== ""
+                && String(item.clipId || "") === String(timelineUnderlayClipId || "")
+            var videoRect = isUnderlay
+                ? timelineUnderlayVideoOutput.contentRect : videoOutput.contentRect
             if (videoRect.width > 0 && videoRect.height > 0)
                 return videoRect.height
         }
@@ -875,8 +881,15 @@ ApplicationWindow {
             var title = timelineTextAt(timelinePosition)
             return !!title && String(title.clipId || "") === String(selectedTimelineClipId)
         }
-        var visual = timelineVideoAt(timelinePosition)
-        return !!visual && String(visual.clipId || "") === String(selectedTimelineClipId)
+
+        // The selected clip doesn't have to be the topmost V2 item. A visible
+        // lower V1 clip must keep its own transform handles when V2 is over it.
+        var visuals = timelineVisibleVisualsAt(timelinePosition)
+        for (var i = 0; i < visuals.length; ++i) {
+            if (String(visuals[i].clipId || "") === String(selectedTimelineClipId))
+                return true
+        }
+        return false
     }
 
     function pointInsidePreviewClip(item, sceneX, sceneY) {
@@ -899,6 +912,22 @@ ApplicationWindow {
         return Math.abs(localX) <= baseWidth / 2 && Math.abs(localY) <= baseHeight / 2
     }
 
+    function timelineVisibleVisualsAt(seconds) {
+        var result = []
+        var primary = timelineVideoAt(seconds)
+        if (primary) result.push(primary)
+
+        // If the top layer is a still image, the main decoder continues to show
+        // the video underneath it. If the top is a video, V1 is rendered by the
+        // dedicated secondary decoder. Return visible items in top-to-bottom order.
+        var underlyingVideo = primary && primary.kind === "image"
+            ? timelineFootageAt(seconds) : timelineUnderlayVideoAt(seconds)
+        if (underlyingVideo && (!primary
+                || String(underlyingVideo.clipId || "") !== String(primary.clipId || "")))
+            result.push(underlyingVideo)
+        return result
+    }
+
     function previewElementAt(sceneX, sceneY) {
         if (!timelinePreviewActive || timelinePlaybackTimer.running) return ""
         var effect = previewBlurEffect()
@@ -907,9 +936,15 @@ ApplicationWindow {
         var title = timelineTextAt(timelinePosition)
         if (title && pointInsidePreviewClip(title, sceneX, sceneY))
             return String(title.clipId || "")
-        var visual = timelineVideoAt(timelinePosition)
-        if (visual && pointInsidePreviewClip(visual, sceneX, sceneY))
-            return String(visual.clipId || "")
+
+        // Test visible clips from foreground to background. This is essential
+        // when a transformed upper clip leaves parts of the lower clip exposed.
+        var visuals = timelineVisibleVisualsAt(timelinePosition)
+        for (var i = 0; i < visuals.length; ++i) {
+            var visual = visuals[i]
+            if (pointInsidePreviewClip(visual, sceneX, sceneY))
+                return String(visual.clipId || "")
+        }
         return ""
     }
 
