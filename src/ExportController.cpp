@@ -66,7 +66,8 @@ double clipDuration(const QVariantMap &item)
     if (ok && std::isfinite(value) && value > 0.0)
         return value;
     const QString kind = item.value(QStringLiteral("kind")).toString();
-    return (kind == QStringLiteral("image") || kind == QStringLiteral("text")) ? 5.0 : 36.0;
+    return (kind == QStringLiteral("image") || kind == QStringLiteral("text")
+            || kind == QStringLiteral("effect")) ? 5.0 : 36.0;
 }
 
 double boundedItemValue(const QVariantMap &item, const QString &key,
@@ -196,7 +197,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             continue;
 
         m_timelineDuration = qMax(m_timelineDuration, clip.start + clip.duration);
-        if (clip.kind == QStringLiteral("text")) {
+        if (clip.kind == QStringLiteral("text") || clip.kind == QStringLiteral("effect")) {
             clips.push_back(clip);
             continue;
         }
@@ -264,6 +265,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                    .arg(number(m_timelineDuration));
 
     QVector<Clip> visuals;
+    QVector<Clip> blurEffects;
     QVector<Clip> titles;
     QVector<Clip> audioClips;
     for (const Clip &clip : clips) {
@@ -272,6 +274,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             visuals.push_back(clip);
         else if (clip.kind == QStringLiteral("text"))
             titles.push_back(clip);
+        else if (clip.kind == QStringLiteral("effect") && clip.blur > 0.0)
+            blurEffects.push_back(clip);
         if ((clip.kind == QStringLiteral("audio") && (clip.track == 2 || clip.track == 3))
                 || (clip.kind == QStringLiteral("video") && clip.hasAudio))
             audioClips.push_back(clip);
@@ -332,6 +336,19 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                             number(clip.start), number(clip.start + clip.duration), merged);
         currentVideo = merged;
         ++visualSerial;
+    }
+
+    std::stable_sort(blurEffects.begin(), blurEffects.end(), [](const Clip &a, const Clip &b) {
+        return a.start < b.start;
+    });
+    int blurEffectSerial = 0;
+    for (const Clip &effect : blurEffects) {
+        const QString merged = QStringLiteral("fxblur%1").arg(blurEffectSerial);
+        filters << QStringLiteral("[%1]gblur=sigma=%2:steps=2:enable='between(t,%3,%4)'[%5]")
+                       .arg(currentVideo, number(effect.blur * 0.24),
+                            number(effect.start), number(effect.start + effect.duration), merged);
+        currentVideo = merged;
+        ++blurEffectSerial;
     }
 
     std::stable_sort(titles.begin(), titles.end(), [](const Clip &a, const Clip &b) {
