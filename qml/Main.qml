@@ -20,11 +20,11 @@ ApplicationWindow {
             implicitHeight: 4
             width: cutrixSlider.availableWidth
             height: 4
-            color: theme.border
+            color: cutrixSlider.palette.mid
             Rectangle {
                 width: Math.max(0, cutrixSlider.visualPosition * parent.width)
                 height: parent.height
-                color: cutrixSlider.enabled ? theme.accent : theme.muted
+                color: cutrixSlider.enabled ? cutrixSlider.palette.highlight : cutrixSlider.palette.mid
             }
         }
         handle: Rectangle {
@@ -35,9 +35,9 @@ ApplicationWindow {
             x: cutrixSlider.leftPadding
                 + cutrixSlider.visualPosition * (cutrixSlider.availableWidth - width)
             y: cutrixSlider.topPadding + (cutrixSlider.availableHeight - height) / 2
-            color: !cutrixSlider.enabled ? theme.muted
-                : cutrixSlider.pressed ? theme.accent2 : theme.text
-            border.color: cutrixSlider.enabled ? theme.accent : theme.border
+            color: !cutrixSlider.enabled ? cutrixSlider.palette.mid
+                : cutrixSlider.pressed ? cutrixSlider.palette.highlight : cutrixSlider.palette.buttonText
+            border.color: cutrixSlider.enabled ? cutrixSlider.palette.highlight : cutrixSlider.palette.mid
             border.width: 1
             radius: 0
         }
@@ -59,6 +59,7 @@ ApplicationWindow {
     palette.highlight: theme.accent
     palette.highlightedText: theme.background
     palette.placeholderText: theme.muted
+    palette.mid: theme.border
 
     property string currentTheme: projectStore.savedTheme()
     property string selectedMedia: ""
