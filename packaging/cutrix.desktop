@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Cutrix
+GenericName=Video Editor
+Comment=Pixel-style nonlinear video editor
+Exec=cutrix
+Icon=io.github.q933598_ai.Cutrix
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+StartupNotify=true
+StartupWMClass=cutrix
