@@ -38,7 +38,8 @@ ApplicationWindow {
         && (selectedTimelineClip.kind === "image"
             || (selectedTimelineClip.kind === "video"
                 && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
-    readonly property bool selectedClipCanBlur: selectedClipCanColorCorrect
+    readonly property bool selectedClipCanBlur: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "effect" || selectedClipCanColorCorrect)
     readonly property bool selectedClipCanZoom: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
@@ -330,6 +331,51 @@ ApplicationWindow {
         setSelectedClipProperties(values, "Эффект «" + label + "»")
     }
 
+    function addBlurEffect() {
+        var source = selectedTimelineClip
+        var start = Math.max(0, Number(timelinePosition || 0))
+        var duration = 5
+
+        // When a video/image clip is selected, place the effect directly over
+        // its interval. Otherwise make a short effect at the playhead.
+        if (source && (source.kind === "video" || source.kind === "image")
+                && (Number(source.track) === 0 || Number(source.track) === 1)) {
+            start = Math.max(0, Number(source.start || 0))
+            duration = timelineClipDuration(source)
+        } else {
+            var activeClip = timelineVideoAt(start)
+            if (activeClip) {
+                var remaining = Number(activeClip.start || 0)
+                    + timelineClipDuration(activeClip) - start
+                duration = Math.max(0.5, Math.min(5, remaining))
+            }
+        }
+
+        start = findFreeTimelineStart(5, start, duration, "")
+        var effect = {
+            clipId: createTimelineClipId(),
+            name: "Размытие",
+            text: "",
+            url: "",
+            kind: "effect",
+            effectType: "blur",
+            track: 5,
+            start: start,
+            duration: duration,
+            blur: 55
+        }
+        var updated = mediaFiles.slice()
+        updated.push(effect)
+        recordTimelineHistory("Добавить эффект «Размытие»")
+        mediaFiles = updated
+        selectedTimelineClipId = String(effect.clipId)
+        timelinePosition = start
+        saveTimelineMedia(updated)
+        updateTimelinePreview(start)
+        activeSidebarSection = "Эффекты"
+        statusMessage = "Эффект «Размытие» добавлен на FX-дорожку"
+    }
+
     function addPixelSticker(preset) {
         if (!preset) return
         var duration = 5
@@ -467,12 +513,13 @@ ApplicationWindow {
     function timelineClipDuration(item) {
         var value = Number(item.duration)
         if (isFinite(value) && value > 0) return value
-        if (item && (item.kind === "image" || item.kind === "text")) return 5
+        if (item && (item.kind === "image" || item.kind === "text" || item.kind === "effect")) return 5
         return 36
     }
 
     function timelineTrackForKind(kind, requestedTrack) {
-        var track = Math.max(0, Math.min(4, Number(requestedTrack)))
+        var track = Math.max(0, Math.min(5, Number(requestedTrack)))
+        if (kind === "effect") return 5
         if (kind === "audio") return track === 3 ? 3 : 2
         if (kind === "text") return 4
         if (kind === "video" && (track === 2 || track === 3)) return track
@@ -490,6 +537,25 @@ ApplicationWindow {
             return fallback
         var value = Number(item[key])
         return isFinite(value) ? value : fallback
+    }
+
+    // Separate FX clips apply only during their own timeline interval. Their blur
+    // is additive to the existing per-clip blur control above.
+    function timelineBlurAt(item, seconds) {
+        if (!item) return 0
+        var blur = timelineClipProperty(item, "blur", 0)
+        var time = Number(seconds)
+        if (!isFinite(time)) return Math.max(0, Math.min(100, blur))
+        for (var i = 0; i < mediaFiles.length; ++i) {
+            var effect = mediaFiles[i]
+            if (effect.kind !== "effect" || effect.effectType !== "blur"
+                    || Number(effect.track) < 0)
+                continue
+            var start = Number(effect.start || 0)
+            if (start <= time && start + timelineClipDuration(effect) > time)
+                blur += timelineClipProperty(effect, "blur", 50)
+        }
+        return Math.max(0, Math.min(100, blur))
     }
 
     // Animated zoom is evaluated against the clip's local timeline time.
@@ -2908,6 +2974,20 @@ ApplicationWindow {
                         font.family: "monospace"
                         font.pixelSize: 10 * root.uiFontScale / 100
                     }
+                    Button {
+                        id: addBlurEffectButton
+                        text: "＋ Добавить размытие на FX-дорожку"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        Layout.preferredWidth: effectsColumnLayout.width
+                        Layout.maximumWidth: effectsColumnLayout.width
+                        enabled: root.currentProjectPath !== ""
+                        onClicked: root.addBlurEffect()
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 2 }
+                    }
                     RowLayout {
                         Layout.fillWidth: true
                         Text {
@@ -3186,14 +3266,14 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0) !== 0
-                                || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) > 0
+                                || root.timelineBlurAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0)
-                                blurEnabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) > 0
+                                blurEnabled: root.timelineBlurAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) > 0
                                 blur: Math.max(0, Math.min(1,
-                                    root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) / 100))
+                                    root.timelineBlurAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) / 100))
                                 blurMax: 32
                                 autoPaddingEnabled: false
                             }
@@ -3258,14 +3338,14 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
-                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
+                                || root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
-                                blurEnabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
+                                blurEnabled: root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
                                 blur: Math.max(0, Math.min(1,
-                                    root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) / 100))
+                                    root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100))
                                 blurMax: 32
                                 autoPaddingEnabled: false
                             }
@@ -3302,14 +3382,14 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
-                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
+                                || root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
-                                blurEnabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
+                                blurEnabled: root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
                                 blur: Math.max(0, Math.min(1,
-                                    root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) / 100))
+                                    root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100))
                                 blurMax: 32
                                 autoPaddingEnabled: false
                             }
@@ -4078,7 +4158,7 @@ ApplicationWindow {
                             spacing: 3
                             Item { width: parent.width; height: 22 }
                             Repeater {
-                                model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
+                                model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ", "FX · РАЗМЫТИЕ"]
                                 delegate: Rectangle {
                                     required property string modelData
                                     width: parent.width
@@ -4137,7 +4217,7 @@ ApplicationWindow {
                             id: timelineCanvas
                             width: Math.max(timelineViewport.width,
                                 root.timelineWorkspaceDuration * timelineScale)
-                            height: Math.max(timelineViewport.height, 22 + 5 * 37 + 8)
+                            height: Math.max(timelineViewport.height, 22 + 6 * 37 + 8)
                             clip: true
                             // One stable scale is shared by ruler, clip geometry,
                             // dragging, resizing, drop positions and the playhead.
@@ -4174,7 +4254,7 @@ ApplicationWindow {
                                     }
                                 }
                             Repeater {
-                                model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"]
+                                model: ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ", "FX · РАЗМЫТИЕ"]
                                 delegate: Item {
                                     id: timelineTrack
                                     required property string modelData
@@ -4258,13 +4338,16 @@ ApplicationWindow {
                                             height: 30
                                             y: 2 + (draggingClip ? dragOffsetY : 0)
                                             clip: true
-                                            color: modelData.kind === "text" ? "#a36ac7"
+                                            color: modelData.kind === "effect" ? theme.accent
+                                                : modelData.kind === "text" ? "#a36ac7"
                                                 : modelData.kind === "audio" ? "#226d6c" : "#315b9b"
                                             border.color: theme.accent
                                             Row {
                                                 anchors.fill: parent
                                                 clip: true
-                                                visible: timelineClip.modelData.kind !== "audio" && timelineClip.modelData.kind !== "text"
+                                                visible: timelineClip.modelData.kind !== "audio"
+                                                    && timelineClip.modelData.kind !== "text"
+                                                    && timelineClip.modelData.kind !== "effect"
                                                 Repeater {
                                                     model: Math.max(1, Math.ceil(timelineClip.width / 54))
                                                     delegate: Image {
@@ -4288,7 +4371,9 @@ ApplicationWindow {
                                             Text {
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 5
-                                                text: modelData.kind === "text" ? "T · " + modelData.text : modelData.name
+                                                text: modelData.kind === "text" ? "T · " + modelData.text
+                                                    : modelData.kind === "effect" ? "FX · Размытие · " + Math.round(Number(modelData.blur || 0)) + "%"
+                                                    : modelData.name
                                                 color: "#f0f2ff"
                                                 font.family: "monospace"
                                                 font.pixelSize: 10
@@ -4373,7 +4458,7 @@ ApplicationWindow {
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
                                                     var desiredStart = Math.max(0, Math.round(draggedX / Math.max(0.001, timelineCanvas.timelineScale)))
                                                     // The track rows start at y=25 and repeat every 37 pixels.
-                                                    var requestedTrack = Math.max(0, Math.min(4, Math.floor((scenePos.y - 23.5) / 37)))
+                                                    var requestedTrack = Math.max(0, Math.min(5, Math.floor((scenePos.y - 23.5) / 37)))
                                                      var targetTrack = root.timelineTrackForKind(updated[movingIndex].kind, requestedTrack)
                                                     var clipId = String(updated[movingIndex].clipId || "")
                                                     var placedStart = root.findFreeTimelineStart(targetTrack, desiredStart, duration, clipId)
