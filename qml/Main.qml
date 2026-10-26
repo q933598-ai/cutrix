@@ -1939,6 +1939,8 @@ ApplicationWindow {
                 var audioPlayer = timelineAudioPlayers.objectAt(audioIndex)
                 if (audioPlayer) audioPlayer.syncToTimeline()
             }
+            // Sync the second video decoder before any reverse/image early returns.
+            root.syncTimelineUnderlay(root.timelinePosition)
             var currentClip = root.timelineVideoAt(root.timelinePosition)
             var reverseClipToPrepare = currentClip && currentClip.kind === "image"
                 ? root.timelineFootageAt(root.timelinePosition) : currentClip
