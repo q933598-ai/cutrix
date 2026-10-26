@@ -180,6 +180,8 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             clip.zoomMode = QStringLiteral("none");
         clip.zoomAmount = boundedItemValue(item, QStringLiteral("zoomAmount"), 150.0, 110.0, 250.0);
         clip.reverse = item.value(QStringLiteral("reverse"), false).toBool();
+        clip.transitionIn = boundedItemValue(item, QStringLiteral("transitionIn"), 0.0, 0.0, 30.0);
+        clip.transitionOut = boundedItemValue(item, QStringLiteral("transitionOut"), 0.0, 0.0, 30.0);
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
         clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
@@ -325,11 +327,23 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         // Gaussian sigma for the final-resolution FFmpeg export.
         if (clip.blur > 0.0)
             zoomFilter += QStringLiteral("gblur=sigma=%1:steps=2,").arg(number(clip.blur * 0.24));
+
+        // Fade the alpha channel before applying the clip's own opacity, so both
+        // effects multiply correctly instead of replacing one another.
+        QString transitionFilter;
+        const double fadeIn = qMin(clip.duration, clip.transitionIn);
+        const double fadeOut = qMin(clip.duration, clip.transitionOut);
+        if (fadeIn > 0.001)
+            transitionFilter += QStringLiteral("fade=t=in:st=0:d=%1:alpha=1,").arg(number(fadeIn));
+        if (fadeOut > 0.001)
+            transitionFilter += QStringLiteral("fade=t=out:st=%1:d=%2:alpha=1,")
+                                    .arg(number(qMax(0.0, clip.duration - fadeOut)), number(fadeOut));
+
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
                                  "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                                 "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,"
+                                 "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,%13"
                                  "colorchannelmixer=aa=%8,setsar=1,"
                                  "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,%12"
                                  "setpts=PTS-STARTPTS+%10/TB[%11]")
@@ -340,7 +354,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                        .arg(scaledWidth).arg(scaledHeight).arg(angle)
                        .arg(number(clip.opacity / 100.0))
                        .arg(number(clip.duration)).arg(number(clip.start)).arg(label)
-                       .arg(zoomFilter);
+                       .arg(zoomFilter).arg(transitionFilter);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
         filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
