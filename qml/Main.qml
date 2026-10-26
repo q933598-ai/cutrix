@@ -1191,6 +1191,39 @@ ApplicationWindow {
         return Math.max(0, best)
     }
 
+    // Hard collision guard for drag/drop. Unlike the proximity-snap helper above,
+    // this always advances the clip to the right until its whole interval is free.
+    // It can inspect a pending updated array, so release/drop never relies on stale UI state.
+    function timelineCollisionSafeStart(track, desiredStart, duration, excludedClipId, items) {
+        var clips = items || mediaFiles
+        var startValue = Number(desiredStart)
+        var start = isFinite(startValue) ? Math.max(0, startValue) : 0
+        var length = Number(duration)
+        if (!isFinite(length) || length <= 0) length = 36
+        var blockers = []
+        for (var i = 0; i < clips.length; ++i) {
+            var item = clips[i]
+            if (Number(item.track) !== Number(track)) continue
+            if (String(excludedClipId || "") !== ""
+                    && String(item.clipId || "") === String(excludedClipId))
+                continue
+            var otherStartValue = Number(item.start)
+            var otherStart = isFinite(otherStartValue) ? Math.max(0, otherStartValue) : 0
+            var otherDuration = timelineClipDuration(item)
+            var otherEnd = otherStart + otherDuration
+            if (isFinite(otherEnd) && otherEnd > otherStart)
+                blockers.push({ start: otherStart, end: otherEnd })
+        }
+        blockers.sort(function(a, b) { return a.start - b.start })
+        for (var j = 0; j < blockers.length; ++j) {
+            // Half-open intervals: ending exactly where another clip starts is valid.
+            if (start < blockers[j].end - 0.0001
+                    && start + length > blockers[j].start + 0.0001)
+                start = blockers[j].end
+        }
+        return Math.max(0, start)
+    }
+
     function timelineVideoAt(seconds) {
         var candidates = mediaFiles.filter(function(item) {
             return (Number(item.track) === 0 || Number(item.track) === 1)
@@ -5333,10 +5366,11 @@ ApplicationWindow {
                                                         Math.floor((scenePos.y - 23.5) / 37)))
                                                     var previewTrack = root.timelineTrackForKind(
                                                         timelineClip.modelData.kind, requestedTrack)
-                                                    var previewStart = root.findFreeTimelineStart(previewTrack,
+                                                    var previewStart = root.timelineCollisionSafeStart(previewTrack,
                                                         previewX / dragScale,
                                                         root.timelineClipDuration(timelineClip.modelData),
-                                                        String(timelineClip.modelData.clipId || ""))
+                                                        String(timelineClip.modelData.clipId || ""),
+                                                        root.mediaFiles)
                                                     // Keep the dragged clip preview collision-free too, instead of
                                                     // letting it visually merge with a neighbor until mouse release.
                                                     previewX = previewStart * dragScale
@@ -5390,7 +5424,8 @@ ApplicationWindow {
                                                     var requestedTrack = Math.max(0, Math.min(5, Math.floor((scenePos.y - 23.5) / 37)))
                                                      var targetTrack = root.timelineTrackForKind(updated[movingIndex].kind, requestedTrack)
                                                     var clipId = String(updated[movingIndex].clipId || "")
-                                                    var placedStart = root.findFreeTimelineStart(targetTrack, desiredStart, duration, clipId)
+                                                    var placedStart = root.timelineCollisionSafeStart(
+                                                        targetTrack, desiredStart, duration, clipId, updated)
                                                     var didSnap = Math.abs(placedStart - desiredStart) > 0.001
                                                     updated[movingIndex] = Object.assign({}, updated[movingIndex], {
                                                         start: placedStart,
@@ -5501,7 +5536,8 @@ ApplicationWindow {
                                             var requestedStart = Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale)))
                                              var targetTrack = root.timelineTrackForKind(source.kind, timelineTrack.index)
                                              var duration = root.timelineClipDuration(source)
-                                             var start = root.findFreeTimelineStart(targetTrack, requestedStart, duration, "")
+                                             var start = root.timelineCollisionSafeStart(
+                                                 targetTrack, requestedStart, duration, "", updated)
                                             var didSnap = Math.abs(start - requestedStart) > 0.001
 
                                             var clip = Object.assign({}, source, {
