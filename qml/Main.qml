@@ -32,6 +32,7 @@ ApplicationWindow {
     readonly property var selectedTimelineClip: timelineClipById(selectedTimelineClipId)
     readonly property bool selectedClipCanTransform: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "text"
+            || selectedTimelineClip.kind === "effect"
             || ((selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
                 && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
     readonly property bool selectedClipCanColorCorrect: !!selectedTimelineClip
@@ -362,6 +363,10 @@ ApplicationWindow {
             track: 5,
             start: start,
             duration: duration,
+            x: 0,
+            y: 0,
+            scale: 100,
+            rotation: 0,
             blur: 55
         }
         var updated = mediaFiles.slice()
@@ -539,23 +544,34 @@ ApplicationWindow {
         return isFinite(value) ? value : fallback
     }
 
-    // Separate FX clips apply only during their own timeline interval. Their blur
-    // is additive to the existing per-clip blur control above.
+    // The original blur slider stays attached to a media clip. Separate FX
+    // clips are rendered as a masked, transformable region over the preview.
     function timelineBlurAt(item, seconds) {
         if (!item) return 0
-        var blur = timelineClipProperty(item, "blur", 0)
+        return Math.max(0, Math.min(100, timelineClipProperty(item, "blur", 0)))
+    }
+
+    function timelineBlurEffectAt(seconds) {
         var time = Number(seconds)
-        if (!isFinite(time)) return Math.max(0, Math.min(100, blur))
-        for (var i = 0; i < mediaFiles.length; ++i) {
-            var effect = mediaFiles[i]
-            if (effect.kind !== "effect" || effect.effectType !== "blur"
-                    || Number(effect.track) < 0)
-                continue
-            var start = Number(effect.start || 0)
-            if (start <= time && start + timelineClipDuration(effect) > time)
-                blur += timelineClipProperty(effect, "blur", 50)
-        }
-        return Math.max(0, Math.min(100, blur))
+        if (!isFinite(time)) return null
+        var active = mediaFiles.filter(function(item) {
+            return item.kind === "effect" && item.effectType === "blur"
+                && Number(item.track) >= 0
+                && Number(item.start || 0) <= time
+                && Number(item.start || 0) + timelineClipDuration(item) > time
+        })
+        active.sort(function(a, b) { return Number(a.start || 0) - Number(b.start || 0) })
+        return active.length ? active[active.length - 1] : null
+    }
+
+    function previewBlurEffect() {
+        var active = timelineBlurEffectAt(timelinePosition)
+        if (active) return active
+        if (!timelinePlaybackTimer.running && selectedTimelineClip
+                && selectedTimelineClip.kind === "effect"
+                && timelineVideoAt(timelinePosition))
+            return selectedTimelineClip
+        return null
     }
 
     // Animated zoom is evaluated against the clip's local timeline time.
@@ -614,6 +630,7 @@ ApplicationWindow {
     // canvas, so transform handles line up when a landscape clip is fitted
     // inside a vertical Shorts project (and vice versa).
     function previewVisualBaseWidth(item) {
+        if (item && item.kind === "effect") return previewCanvas.width * 0.40
         if (item && item.kind === "image") {
             var imageSize = timelineImagePreview.sourceSize
             if (imageSize.width > 0 && imageSize.height > 0)
@@ -628,6 +645,7 @@ ApplicationWindow {
     }
 
     function previewVisualBaseHeight(item) {
+        if (item && item.kind === "effect") return previewCanvas.height * 0.30
         if (item && item.kind === "image") {
             var imageSize = timelineImagePreview.sourceSize
             if (imageSize.width > 0 && imageSize.height > 0)
@@ -698,6 +716,8 @@ ApplicationWindow {
 
     function previewHasSelectedTransformClip() {
         if (!selectedClipCanTransform || !timelinePreviewActive || timelinePlaybackTimer.running) return false
+        if (selectedTimelineClip.kind === "effect")
+            return !!timelineVideoAt(timelinePosition)
         if (selectedTimelineClip.kind === "text") {
             var title = timelineTextAt(timelinePosition)
             return !!title && String(title.clipId || "") === String(selectedTimelineClipId)
@@ -728,6 +748,9 @@ ApplicationWindow {
 
     function previewElementAt(sceneX, sceneY) {
         if (!timelinePreviewActive || timelinePlaybackTimer.running) return ""
+        var effect = previewBlurEffect()
+        if (effect && pointInsidePreviewClip(effect, sceneX, sceneY))
+            return String(effect.clipId || "")
         var title = timelineTextAt(timelinePosition)
         if (title && pointInsidePreviewClip(title, sceneX, sceneY))
             return String(title.clipId || "")
@@ -821,10 +844,12 @@ ApplicationWindow {
 
     function resetSelectedClipTransform() {
         if (!selectedTimelineClip) return
-        var defaults = {
-            x: 0, y: 0, scale: 100, zoomMode: "none", zoomAmount: 150, reverse: false,
-            rotation: 0, opacity: 100, brightness: 0, contrast: 0, saturation: 0, blur: 0
-        }
+        var defaults = selectedTimelineClip.kind === "effect"
+            ? { x: 0, y: 0, scale: 100, rotation: 0 }
+            : {
+                x: 0, y: 0, scale: 100, zoomMode: "none", zoomAmount: 150, reverse: false,
+                rotation: 0, opacity: 100, brightness: 0, contrast: 0, saturation: 0, blur: 0
+            }
         recordTimelineHistory("Сброс трансформации")
         for (var key in defaults)
             setSelectedClipProperty(key, defaults[key], false, false)
@@ -3266,14 +3291,14 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0) !== 0
-                                || root.timelineBlurAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) > 0
+                                || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0)
-                                blurEnabled: root.timelineBlurAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) > 0
+                                blurEnabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) > 0
                                 blur: Math.max(0, Math.min(1,
-                                    root.timelineBlurAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) / 100))
+                                    root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) / 100))
                                 blurMax: 32
                                 autoPaddingEnabled: false
                             }
@@ -3338,14 +3363,14 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
-                                || root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
-                                blurEnabled: root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
+                                blurEnabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
                                 blur: Math.max(0, Math.min(1,
-                                    root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100))
+                                    root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) / 100))
                                 blurMax: 32
                                 autoPaddingEnabled: false
                             }
@@ -3382,18 +3407,83 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
-                                || root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
-                                blurEnabled: root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) > 0
+                                blurEnabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
                                 blur: Math.max(0, Math.min(1,
-                                    root.timelineBlurAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100))
+                                    root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) / 100))
                                 blurMax: 32
                                 autoPaddingEnabled: false
                             }
                             z: 1
+                        }
+
+                        // Duplicate the current image/video and mask the blur to a movable region.
+                        ShaderEffectSource {
+                            id: timelineBlurPreviewSource
+                            anchors.fill: parent
+                            sourceItem: root.timelineImageActive ? timelineImagePreview
+                                : (timelinePlaybackTimer.running ? videoOutput : timelineVideoStillPreview)
+                            live: true
+                            hideSource: false
+                            recursive: false
+                            visible: false
+                        }
+                        Item {
+                            id: timelineBlurPreviewMaskShape
+                            anchors.fill: parent
+                            visible: true
+                            property var effectClip: root.previewBlurEffect()
+                            Rectangle {
+                                visible: timelineBlurPreviewMaskShape.effectClip !== null
+                                width: timelineBlurPreviewMaskShape.effectClip
+                                    ? root.previewVisualBaseWidth(timelineBlurPreviewMaskShape.effectClip)
+                                        * root.timelineClipProperty(timelineBlurPreviewMaskShape.effectClip, "scale", 100) / 100 : 0
+                                height: timelineBlurPreviewMaskShape.effectClip
+                                    ? root.previewVisualBaseHeight(timelineBlurPreviewMaskShape.effectClip)
+                                        * root.timelineClipProperty(timelineBlurPreviewMaskShape.effectClip, "scale", 100) / 100 : 0
+                                x: parent.width / 2
+                                    + (timelineBlurPreviewMaskShape.effectClip
+                                        ? root.timelinePreviewOffsetX(timelineBlurPreviewMaskShape.effectClip, parent.width) : 0)
+                                    - width / 2
+                                y: parent.height / 2
+                                    + (timelineBlurPreviewMaskShape.effectClip
+                                        ? root.timelinePreviewOffsetY(timelineBlurPreviewMaskShape.effectClip, parent.height) : 0)
+                                    - height / 2
+                                rotation: timelineBlurPreviewMaskShape.effectClip
+                                    ? root.timelineClipProperty(timelineBlurPreviewMaskShape.effectClip, "rotation", 0) : 0
+                                color: "white"
+                                antialiasing: false
+                            }
+                        }
+                        ShaderEffectSource {
+                            id: timelineBlurPreviewMask
+                            anchors.fill: parent
+                            sourceItem: timelineBlurPreviewMaskShape
+                            live: true
+                            hideSource: true
+                            recursive: false
+                            visible: false
+                        }
+                        MultiEffect {
+                            id: timelineBlurPreviewEffect
+                            anchors.fill: parent
+                            z: 2
+                            source: timelineBlurPreviewSource
+                            visible: root.timelinePreviewActive
+                                && root.previewBlurEffect() !== null
+                                && root.timelineVideoAt(root.timelinePosition) !== null
+                            blurEnabled: visible
+                            blur: root.previewBlurEffect()
+                                ? Math.max(0, Math.min(1,
+                                    root.timelineClipProperty(root.previewBlurEffect(), "blur", 55) / 100)) : 0
+                            blurMax: 32
+                            maskEnabled: true
+                            maskSource: timelineBlurPreviewMask
+                            autoPaddingEnabled: false
                         }
 
                         Text {
@@ -3794,6 +3884,7 @@ ApplicationWindow {
                             from: 0; to: 100; stepSize: 5
                             value: root.timelineClipProperty(root.selectedTimelineClip, "opacity", 100)
                             enabled: root.selectedClipCanTransform
+                                && root.selectedTimelineClip.kind !== "effect"
                             onPressedChanged: {
                                 if (pressed) root.transformPreviewOverride = ({})
                                 else root.commitSelectedClipPreviewProperty("opacity")
