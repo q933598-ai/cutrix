@@ -27,3 +27,8 @@ qt_add_qml_module(cutrix
 target_link_libraries(cutrix PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Multimedia Qt6::Widgets)
 
 install(TARGETS cutrix RUNTIME DESTINATION bin)
+install(FILES packaging/cutrix.desktop
+    DESTINATION share/applications)
+install(FILES packaging/cutrix.svg
+    DESTINATION share/icons/hicolor/scalable/apps
+    RENAME io.github.q933598_ai.Cutrix.svg)
