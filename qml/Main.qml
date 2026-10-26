@@ -38,6 +38,7 @@ ApplicationWindow {
         && (selectedTimelineClip.kind === "image"
             || (selectedTimelineClip.kind === "video"
                 && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
+    readonly property bool selectedClipCanBlur: selectedClipCanColorCorrect
     readonly property bool selectedClipCanZoom: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
@@ -617,12 +618,16 @@ ApplicationWindow {
                 || transformPreviewOverride[key] === undefined)
             return
         var value = transformPreviewOverride[key]
-        if (selectedTimelineClip[key] !== value)
-            recordTimelineHistory("Цветокоррекция клипа")
+        if (selectedTimelineClip[key] !== value) {
+            var historyLabel = key === "blur" ? "Размытие клипа"
+                : key === "opacity" ? "Изменить прозрачность"
+                : "Цветокоррекция клипа"
+            recordTimelineHistory(historyLabel)
+        }
         setSelectedClipProperty(key, value, false, false)
         transformPreviewOverride = ({})
         saveTimelineMedia(mediaFiles)
-        statusMessage = "Свойство клипа обновлено"
+        statusMessage = key === "blur" ? "Размытие применено" : "Свойство клипа обновлено"
     }
 
     function previewHasSelectedTransformClip() {
@@ -752,7 +757,7 @@ ApplicationWindow {
         if (!selectedTimelineClip) return
         var defaults = {
             x: 0, y: 0, scale: 100, zoomMode: "none", zoomAmount: 150, reverse: false,
-            rotation: 0, opacity: 100, brightness: 0, contrast: 0, saturation: 0
+            rotation: 0, opacity: 100, brightness: 0, contrast: 0, saturation: 0, blur: 0
         }
         recordTimelineHistory("Сброс трансформации")
         for (var key in defaults)
@@ -2897,6 +2902,76 @@ ApplicationWindow {
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                     }
+                    Text {
+                        text: "РАЗМЫТИЕ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Сила"
+                            color: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            text: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "blur", 0)) + "%"
+                            color: theme.accent
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                    }
+                    Slider {
+                        id: blurEffectSlider
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 100
+                        stepSize: 5
+                        value: root.timelineClipProperty(root.selectedTimelineClip, "blur", 0)
+                        enabled: root.selectedClipCanBlur
+                        onPressedChanged: {
+                            if (pressed) root.transformPreviewOverride = ({})
+                            else root.commitSelectedClipPreviewProperty("blur")
+                        }
+                        onMoved: root.previewSelectedClipProperty("blur", Math.round(value))
+                        background: Rectangle {
+                            x: blurEffectSlider.leftPadding
+                            y: blurEffectSlider.topPadding + blurEffectSlider.availableHeight / 2 - height / 2
+                            width: blurEffectSlider.availableWidth
+                            height: 4
+                            radius: 2
+                            color: theme.background
+                            border.color: theme.border
+                            Rectangle {
+                                width: blurEffectSlider.visualPosition * parent.width
+                                height: parent.height
+                                radius: 2
+                                color: theme.accent
+                            }
+                        }
+                        handle: Rectangle {
+                            x: blurEffectSlider.leftPadding + blurEffectSlider.visualPosition
+                                * (blurEffectSlider.availableWidth - width)
+                            y: blurEffectSlider.topPadding + blurEffectSlider.availableHeight / 2 - height / 2
+                            width: 12
+                            height: 12
+                            radius: 6
+                            color: blurEffectSlider.pressed ? theme.accent : theme.text
+                            border.color: theme.accent
+                        }
+                    }
+                    Button {
+                        id: effectBlurResetButton
+                        Layout.fillWidth: true
+                        text: "↺ Сбросить размытие"
+                        enabled: root.selectedClipCanBlur
+                        onClicked: root.setSelectedClipProperties({ blur: 0 }, "Сброс размытия")
+                        palette.buttonText: theme.text
+                        background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                    }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text {
                         text: "СКОРОСТЬ И НАПРАВЛЕНИЕ"
@@ -3111,10 +3186,16 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0) !== 0
+                                || root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "saturation", 0)
+                                blurEnabled: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) > 0
+                                blur: Math.max(0, Math.min(1,
+                                    root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "blur", 0) / 100))
+                                blurMax: 32
+                                autoPaddingEnabled: false
                             }
                             z: 0
                         }
@@ -3177,10 +3258,16 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
+                                blurEnabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
+                                blur: Math.max(0, Math.min(1,
+                                    root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) / 100))
+                                blurMax: 32
+                                autoPaddingEnabled: false
                             }
                             z: 0.5
                         }
@@ -3215,10 +3302,16 @@ ApplicationWindow {
                             layer.enabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0) !== 0
                                 || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0) !== 0
+                                || root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
                             layer.effect: MultiEffect {
                                 brightness: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "brightness", 0)
                                 contrast: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "contrast", 0)
                                 saturation: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "saturation", 0)
+                                blurEnabled: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) > 0
+                                blur: Math.max(0, Math.min(1,
+                                    root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "blur", 0) / 100))
+                                blurMax: 32
+                                autoPaddingEnabled: false
                             }
                             z: 1
                         }
