@@ -3435,7 +3435,10 @@ ApplicationWindow {
                         Item {
                             id: timelineBlurPreviewMaskShape
                             anchors.fill: parent
-                            visible: true
+                            // Keep the texture transparent outside the blur rectangle.
+                            // A plain ShaderEffectSource root can make an otherwise
+                            // transparent canvas behave like an opaque mask.
+                            layer.enabled: true
                             property var effectClip: root.previewBlurEffect()
                             Rectangle {
                                 visible: timelineBlurPreviewMaskShape.effectClip !== null
@@ -3459,15 +3462,6 @@ ApplicationWindow {
                                 antialiasing: false
                             }
                         }
-                        ShaderEffectSource {
-                            id: timelineBlurPreviewMask
-                            anchors.fill: parent
-                            sourceItem: timelineBlurPreviewMaskShape
-                            live: true
-                            hideSource: true
-                            recursive: false
-                            visible: false
-                        }
                         MultiEffect {
                             id: timelineBlurPreviewEffect
                             anchors.fill: parent
@@ -3482,7 +3476,7 @@ ApplicationWindow {
                                     root.timelineClipProperty(root.previewBlurEffect(), "blur", 55) / 100)) : 0
                             blurMax: 32
                             maskEnabled: true
-                            maskSource: timelineBlurPreviewMask
+                            maskSource: timelineBlurPreviewMaskShape
                             autoPaddingEnabled: false
                         }
 
