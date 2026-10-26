@@ -8,6 +8,40 @@ import QtQuick.Effects
 
 ApplicationWindow {
     id: root
+
+    component CutrixSlider: Slider {
+        id: cutrixSlider
+        implicitWidth: 140
+        implicitHeight: 24
+        background: Rectangle {
+            x: cutrixSlider.leftPadding
+            y: cutrixSlider.topPadding + cutrixSlider.availableHeight / 2 - height / 2
+            implicitWidth: 100
+            implicitHeight: 4
+            width: cutrixSlider.availableWidth
+            height: 4
+            color: theme.border
+            Rectangle {
+                width: Math.max(0, cutrixSlider.visualPosition * parent.width)
+                height: parent.height
+                color: cutrixSlider.enabled ? theme.accent : theme.muted
+            }
+        }
+        handle: Rectangle {
+            implicitWidth: 12
+            implicitHeight: 12
+            width: 12
+            height: 12
+            x: cutrixSlider.leftPadding
+                + cutrixSlider.visualPosition * (cutrixSlider.availableWidth - width)
+            y: cutrixSlider.topPadding + (cutrixSlider.availableHeight - height) / 2
+            color: !cutrixSlider.enabled ? theme.muted
+                : cutrixSlider.pressed ? theme.accent2 : theme.text
+            border.color: cutrixSlider.enabled ? theme.accent : theme.border
+            border.width: 1
+            radius: 0
+        }
+    }
     visible: true
     width: 1440
     height: 900
@@ -42,6 +76,9 @@ ApplicationWindow {
     readonly property bool selectedClipCanBlur: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "effect" || selectedClipCanColorCorrect)
     readonly property bool selectedClipCanZoom: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
+        && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
+    readonly property bool selectedClipCanTransition: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
     readonly property bool selectedClipCanReverse: !!selectedTimelineClip
@@ -378,6 +415,31 @@ ApplicationWindow {
         setSelectedClipProperties(changes, "Сбросить настройки аудио")
     }
 
+    function applyTransitionPreset(preset) {
+        if (!selectedClipCanTransition) {
+            statusMessage = "Выбери видео- или графический клип на V1/V2"
+            return
+        }
+        var incoming = 0
+        var outgoing = 0
+        var label = "Переходы сброшены"
+        if (preset === "in") {
+            incoming = 0.8
+            label = "Плавное появление"
+        } else if (preset === "out") {
+            outgoing = 0.8
+            label = "Плавное затухание"
+        } else if (preset === "both") {
+            incoming = 0.8
+            outgoing = 0.8
+            label = "Появление + затухание"
+        }
+        setSelectedClipProperties({
+            transitionIn: incoming,
+            transitionOut: outgoing
+        }, label)
+    }
+
     function addBlurEffect() {
         var source = selectedTimelineClip
         var start = Math.max(0, Number(timelinePosition || 0))
@@ -566,6 +628,24 @@ ApplicationWindow {
         if (isFinite(value) && value > 0) return value
         if (item && (item.kind === "image" || item.kind === "text" || item.kind === "effect")) return 5
         return 36
+    }
+
+    function timelineVisualOpacity(item, seconds) {
+        if (!item) return 1
+        var base = Math.max(0, Math.min(100,
+            root.timelineClipProperty(item, "opacity", 100))) / 100
+        var duration = Math.max(0.001, root.timelineClipDuration(item))
+        var localTime = Number(seconds) - Number(item.start || 0)
+        var fadeIn = Math.max(0, Math.min(duration,
+            Number(root.timelineClipProperty(item, "transitionIn", 0) || 0)))
+        var fadeOut = Math.max(0, Math.min(duration,
+            Number(root.timelineClipProperty(item, "transitionOut", 0) || 0)))
+        if (localTime < 0 || localTime > duration) return 0
+        if (fadeIn > 0.001 && localTime < fadeIn)
+            base *= Math.max(0, Math.min(1, localTime / fadeIn))
+        if (fadeOut > 0.001 && localTime > duration - fadeOut)
+            base *= Math.max(0, Math.min(1, (duration - localTime) / fadeOut))
+        return base
     }
 
     function audioPreviewGain(item, seconds) {
@@ -2630,7 +2710,7 @@ ApplicationWindow {
                 Text { text: "Размер текста интерфейса"; color: theme.text; font.family: "monospace"; font.pixelSize: (13 * root.uiFontScale / 100) }
                 RowLayout {
                     Layout.fillWidth: true
-                    Slider {
+                    CutrixSlider {
                         Layout.fillWidth: true
                         from: 100
                         to: 130
@@ -2704,6 +2784,8 @@ ApplicationWindow {
                                         stickerDialog.open()
                                     } else if (modelData[1] === "Аудио") {
                                         root.activeSidebarSection = "Аудио"
+                                    } else if (modelData[1] === "Переходы") {
+                                        root.activeSidebarSection = "Переходы"
                                     } else {
                                         root.statusMessage = modelData[1] + " — раздел пока в разработке"
                                     }
@@ -2727,7 +2809,9 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: 9
                     spacing: 8
-                    visible: root.activeSidebarSection !== "Эффекты" && root.activeSidebarSection !== "Аудио"
+                    visible: root.activeSidebarSection !== "Эффекты"
+                        && root.activeSidebarSection !== "Аудио"
+                        && root.activeSidebarSection !== "Переходы"
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
                         id: mediaSearchField
@@ -3097,7 +3181,7 @@ ApplicationWindow {
                             font.pixelSize: 10 * root.uiFontScale / 100
                         }
                     }
-                    Slider {
+                    CutrixSlider {
                         id: blurEffectSlider
                         Layout.fillWidth: true
                         from: 0
@@ -3303,7 +3387,7 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Громкость"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                            Slider {
+                            CutrixSlider {
                                 Layout.fillWidth: true
                                 from: 0; to: 200; stepSize: 1
                                 enabled: root.selectedClipCanAudio
@@ -3320,7 +3404,7 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Панорама"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                            Slider {
+                            CutrixSlider {
                                 Layout.fillWidth: true
                                 from: -100; to: 100; stepSize: 1
                                 enabled: root.selectedClipCanAudio
@@ -3340,7 +3424,7 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Появление"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                            Slider {
+                            CutrixSlider {
                                 Layout.fillWidth: true
                                 from: 0; to: 10; stepSize: 0.1
                                 enabled: root.selectedClipCanAudio
@@ -3357,7 +3441,7 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Затухание"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
-                            Slider {
+                            CutrixSlider {
                                 Layout.fillWidth: true
                                 from: 0; to: 10; stepSize: 0.1
                                 enabled: root.selectedClipCanAudio
@@ -3442,7 +3526,7 @@ ApplicationWindow {
                                     font.pixelSize: 9
                                     Layout.preferredWidth: 43
                                 }
-                                Slider {
+                                CutrixSlider {
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
                                     from: -12; to: 12; stepSize: 1
@@ -3533,6 +3617,140 @@ ApplicationWindow {
                         }
                     }
                 }
+
+                ScrollView {
+                    id: transitionsScroll
+                    anchors.fill: parent
+                    visible: root.activeSidebarSection === "Переходы"
+                    clip: true
+                    contentWidth: availableWidth
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                    ColumnLayout {
+                        id: transitionsColumnLayout
+                        x: 9
+                        width: Math.max(1, transitionsScroll.availableWidth - 18)
+                        spacing: 9
+
+                        Text {
+                            text: "ПЕРЕХОДЫ КЛИПА"
+                            color: theme.accent
+                            font.family: "monospace"
+                            font.bold: true
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.selectedClipCanTransition
+                                ? String(root.selectedTimelineClip.name || "Выбранный клип")
+                                : "Выбери видео или изображение на V1/V2. Переходы применяются к началу и концу клипа."
+                            color: root.selectedClipCanTransition ? theme.text : theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 11 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        Text {
+                            text: "БЫСТРЫЕ ПРЕСЕТЫ"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: transitionsColumnLayout.width < 250 ? 1 : 2
+                            columnSpacing: 4
+                            rowSpacing: 4
+                            Repeater {
+                                model: [
+                                    { label: "↘ Появление", preset: "in" },
+                                    { label: "↗ Затухание", preset: "out" },
+                                    { label: "⇄ Вход + выход", preset: "both" },
+                                    { label: "↺ Сбросить", preset: "none" }
+                                ]
+                                delegate: Button {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    Layout.preferredHeight: 32
+                                    enabled: root.selectedClipCanTransition
+                                    text: modelData.label
+                                    font.family: "monospace"
+                                    font.pixelSize: 10
+                                    onClicked: root.applyTransitionPreset(modelData.preset)
+                                    palette.buttonText: theme.text
+                                    background: Rectangle {
+                                        color: theme.panelAlt
+                                        border.color: theme.border
+                                        radius: 0
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Появление"
+                                color: theme.text
+                                font.family: "monospace"
+                                font.pixelSize: 10 * root.uiFontScale / 100
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "transitionIn", 0)).toFixed(1) + " с"
+                                color: theme.accent
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                            }
+                        }
+                        CutrixSlider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: Math.min(3, Math.max(0.1,
+                                root.selectedClipCanTransition ? root.timelineClipDuration(root.selectedTimelineClip) / 2 : 3))
+                            stepSize: 0.1
+                            enabled: root.selectedClipCanTransition
+                            value: root.timelineClipProperty(root.selectedTimelineClip, "transitionIn", 0)
+                            onMoved: root.setSelectedClipProperty("transitionIn", value, true, false)
+                            onPressedChanged: if (pressed) root.recordTimelineHistory("Длительность перехода")
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Затухание"
+                                color: theme.text
+                                font.family: "monospace"
+                                font.pixelSize: 10 * root.uiFontScale / 100
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "transitionOut", 0)).toFixed(1) + " с"
+                                color: theme.accent
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                            }
+                        }
+                        CutrixSlider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: Math.min(3, Math.max(0.1,
+                                root.selectedClipCanTransition ? root.timelineClipDuration(root.selectedTimelineClip) / 2 : 3))
+                            stepSize: 0.1
+                            enabled: root.selectedClipCanTransition
+                            value: root.timelineClipProperty(root.selectedTimelineClip, "transitionOut", 0)
+                            onMoved: root.setSelectedClipProperty("transitionOut", value, true, false)
+                            onPressedChanged: if (pressed) root.recordTimelineHistory("Длительность перехода")
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Переходы плавно открывают или скрывают клип через альфа-канал. При наличии клипа ниже по дорожке он будет виден под переходом. Эффекты сохраняются и применяются при экспорте."
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 9 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+
             }
 
             Rectangle {
@@ -3628,7 +3846,7 @@ ApplicationWindow {
                                 // thumbnail is layered above it, but if frame extraction fails,
                                 // VideoOutput can still show the decoder's last rendered frame.
                                 || mediaPlayer.hasVideo
-                            opacity: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "opacity", 100) / 100
+                            opacity: root.timelineVisualOpacity(root.timelineFootageAt(root.timelinePosition), root.timelinePosition)
                             transform: [
                                 Scale {
                                     xScale: root.timelineClipScaleAt(root.timelineFootageAt(root.timelinePosition), root.timelinePosition) / 100
@@ -3700,7 +3918,7 @@ ApplicationWindow {
                                 && root.timelineVideoAt(root.timelinePosition) !== null
                                 && root.timelineVideoAt(root.timelinePosition).kind === "video"
                                 && !timelinePlaybackTimer.running
-                            opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
+                            opacity: root.timelineVisualOpacity(root.timelineVideoAt(root.timelinePosition), root.timelinePosition)
                             transform: [
                                 Scale {
                                     xScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
@@ -3744,7 +3962,7 @@ ApplicationWindow {
                             asynchronous: true
                             cache: true
                             visible: root.timelineImageActive && root.timelinePreviewActive
-                            opacity: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "opacity", 100) / 100
+                            opacity: root.timelineVisualOpacity(root.timelineVideoAt(root.timelinePosition), root.timelinePosition)
                             transform: [
                                 Scale {
                                     xScale: root.timelineClipScaleAt(root.timelineVideoAt(root.timelinePosition), root.timelinePosition) / 100
@@ -4233,7 +4451,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         Text { text: "Непрозрачность"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
-                        Slider {
+                        CutrixSlider {
                             id: opacitySlider
                             Layout.fillWidth: true
                             from: 0; to: 100; stepSize: 5
@@ -4273,7 +4491,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         visible: !!root.selectedTimelineClip
                         Text { text: "Громкость %"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
-                        Slider {
+                        CutrixSlider {
                             id: volumeSlider
                             Layout.fillWidth: true
                             from: 0; to: 100; stepSize: 5
@@ -4436,7 +4654,7 @@ ApplicationWindow {
                                     font.pixelSize: 10
                                 }
                             }
-                            Slider {
+                            CutrixSlider {
                                 id: correctionSlider
                                 Layout.fillWidth: true
                                 from: -1
@@ -4523,7 +4741,7 @@ ApplicationWindow {
                         palette.buttonText: theme.text
                         background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                     }
-                    Slider {
+                    CutrixSlider {
                         id: timelineZoomSlider
                         Layout.preferredWidth: 210
                         Layout.minimumWidth: 95
