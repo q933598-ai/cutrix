@@ -5,6 +5,7 @@
 #include <QTemporaryDir>
 #include <QVariantList>
 #include <QStringList>
+#include <QVector>
 
 class ExportController final : public QObject
 {
@@ -48,6 +49,15 @@ private:
         double rotation = 0.0;
         double opacity = 100.0;
         double volume = 100.0;
+        double audioPan = 0.0;
+        double audioFadeIn = 0.0;
+        double audioFadeOut = 0.0;
+        bool audioMuted = false;
+        bool audioNormalize = false;
+        bool audioCompressor = false;
+        bool audioDenoise = false;
+        bool audioLimiter = false;
+        QVector<double> equalizerBands;
         double brightness = 0.0;
         double contrast = 0.0;
         double saturation = 0.0;
