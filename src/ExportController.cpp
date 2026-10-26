@@ -328,8 +328,9 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         if (clip.blur > 0.0)
             zoomFilter += QStringLiteral("gblur=sigma=%1:steps=2,").arg(number(clip.blur * 0.24));
 
-        // Fade the alpha channel before applying the clip's own opacity, so both
-        // effects multiply correctly instead of replacing one another.
+        // Apply transitions after reverse/zoom/blur, then multiply the fade alpha
+        // by the clip's own opacity. This keeps transition direction correct for
+        // reversed clips and preserves the regular opacity setting.
         QString transitionFilter;
         const double fadeIn = qMin(clip.duration, clip.transitionIn);
         const double fadeOut = qMin(clip.duration, clip.transitionOut);
@@ -343,10 +344,9 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
                                  "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                                 "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,%13"
-                                 "colorchannelmixer=aa=%8,setsar=1,"
-                                 "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,%12"
-                                 "setpts=PTS-STARTPTS+%10/TB[%11]")
+                                 "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,setsar=1,"
+                                 "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,%12%13"
+                                 "colorchannelmixer=aa=%8,setpts=PTS-STARTPTS+%10/TB[%11]")
                        .arg(clip.inputIndex)
                        .arg(number(clip.brightness))
                        .arg(number(1.0 + clip.contrast))
