@@ -343,10 +343,52 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
     });
     int blurEffectSerial = 0;
     for (const Clip &effect : blurEffects) {
-        const QString merged = QStringLiteral("fxblur%1").arg(blurEffectSerial);
-        filters << QStringLiteral("[%1]gblur=sigma=%2:steps=2:enable='between(t,%3,%4)'[%5]")
-                       .arg(currentVideo, number(effect.blur * 0.24),
-                            number(effect.start), number(effect.start + effect.duration), merged);
+        // FX clips use a transformable rectangle centered on the project frame.
+        // Keep preview and export geometry in sync: 40% of frame width by 30%
+        // of frame height at 100% scale, then apply the clip's x/y/scale/rotation.
+        const int regionWidth = qMax(2, qRound(m_outputWidth * 0.40 * effect.scale / 100.0));
+        const int regionHeight = qMax(2, qRound(m_outputHeight * 0.30 * effect.scale / 100.0));
+        const double angle = effect.rotation * 3.14159265358979323846 / 180.0;
+        const double offsetX = effect.x;
+        const double offsetY = effect.y;
+        // The mask rotates around the full frame's center. Pre-rotate its center
+        // offset so the resulting rectangle stays at the chosen X/Y.
+        const double maskCenterX = m_outputWidth / 2.0
+            + offsetX * std::cos(angle) + offsetY * std::sin(angle);
+        const double maskCenterY = m_outputHeight / 2.0
+            - offsetX * std::sin(angle) + offsetY * std::cos(angle);
+        const int maskX = qRound(maskCenterX - regionWidth / 2.0);
+        const int maskY = qRound(maskCenterY - regionHeight / 2.0);
+
+        const QString base = QStringLiteral("fxbase%1").arg(blurEffectSerial);
+        const QString blurInput = QStringLiteral("fxsrc%1").arg(blurEffectSerial);
+        const QString blurred = QStringLiteral("fxblurred%1").arg(blurEffectSerial);
+        const QString mask = QStringLiteral("fxmask%1").arg(blurEffectSerial);
+        const QString masked = QStringLiteral("fxmasked%1").arg(blurEffectSerial);
+        const QString merged = QStringLiteral("fxout%1").arg(blurEffectSerial);
+
+        filters << QStringLiteral("[%1]split[%2][%3]")
+                       .arg(currentVideo, base, blurInput);
+        filters << QStringLiteral("[%1]gblur=sigma=%2:steps=2[%3]")
+                       .arg(blurInput, number(effect.blur * 0.24), blurred);
+
+        QString maskFilter = QStringLiteral(
+            "color=c=black:s=%1x%2:r=%3:d=%4,"
+            "drawbox=x=%5:y=%6:w=%7:h=%8:color=white:t=fill,format=gray")
+                .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
+                .arg(number(m_timelineDuration)).arg(maskX).arg(maskY)
+                .arg(regionWidth).arg(regionHeight);
+        if (qAbs(effect.rotation) > 0.001) {
+            maskFilter += QStringLiteral(",rotate=%1:ow=%2:oh=%3:c=black")
+                .arg(number(angle)).arg(m_outputWidth).arg(m_outputHeight);
+        }
+        filters << maskFilter + QStringLiteral("[%1]").arg(mask);
+        filters << QStringLiteral("[%1][%2]alphamerge[%3]")
+                       .arg(blurred, mask, masked);
+        filters << QStringLiteral("[%1][%2]overlay=0:0:eof_action=pass:shortest=0:"
+                                  "enable='between(t,%3,%4)'[%5]")
+                       .arg(base, masked, number(effect.start),
+                            number(effect.start + effect.duration), merged);
         currentVideo = merged;
         ++blurEffectSerial;
     }
