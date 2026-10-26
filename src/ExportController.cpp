@@ -183,6 +183,19 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
         clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
+        clip.audioPan = boundedItemValue(item, QStringLiteral("audioPan"), 0.0, -100.0, 100.0);
+        clip.audioFadeIn = boundedItemValue(item, QStringLiteral("audioFadeIn"), 0.0, 0.0, 60.0);
+        clip.audioFadeOut = boundedItemValue(item, QStringLiteral("audioFadeOut"), 0.0, 0.0, 60.0);
+        clip.audioMuted = item.value(QStringLiteral("audioMuted"), false).toBool();
+        clip.audioNormalize = item.value(QStringLiteral("audioNormalize"), false).toBool();
+        clip.audioCompressor = item.value(QStringLiteral("audioCompressor"), false).toBool();
+        clip.audioDenoise = item.value(QStringLiteral("audioDenoise"), false).toBool();
+        clip.audioLimiter = item.value(QStringLiteral("audioLimiter"), false).toBool();
+        const int eqFrequencies[] = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+        for (int frequency : eqFrequencies) {
+            clip.equalizerBands.push_back(boundedItemValue(
+                item, QStringLiteral("eq%1").arg(frequency), 0.0, -12.0, 12.0));
+        }
         clip.brightness = boundedItemValue(item, QStringLiteral("brightness"), 0.0, -1.0, 1.0);
         clip.contrast = boundedItemValue(item, QStringLiteral("contrast"), 0.0, -1.0, 1.0);
         clip.saturation = boundedItemValue(item, QStringLiteral("saturation"), 0.0, -1.0, 1.0);
@@ -441,11 +454,53 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             continue;
         const QString label = QStringLiteral("audio%1").arg(audioSerial);
         const int delay = qMax(0, qRound(clip.start * 1000.0));
-        const QString reverseAudio = clip.reverse ? QStringLiteral("areverse,") : QString();
-        filters << QStringLiteral("[%1:a:0]atrim=duration=%2,asetpts=PTS-STARTPTS,%3aresample=48000,"
-                                 "volume=%4,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=%5|%5[%6]")
-                       .arg(clip.inputIndex).arg(number(clip.duration)).arg(reverseAudio)
-                       .arg(number(clip.volume / 100.0)).arg(delay).arg(label);
+        QStringList audioChain;
+        audioChain << QStringLiteral("atrim=duration=%1").arg(number(clip.duration))
+                   << QStringLiteral("asetpts=PTS-STARTPTS");
+        if (clip.reverse)
+            audioChain << QStringLiteral("areverse");
+        audioChain << QStringLiteral("aresample=48000")
+                   << QStringLiteral("aformat=sample_fmts=fltp:channel_layouts=stereo");
+
+        static const int eqFrequencies[] = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+        for (int band = 0; band < clip.equalizerBands.size() && band < 10; ++band) {
+            const double gain = clip.equalizerBands.at(band);
+            if (std::abs(gain) < 0.01)
+                continue;
+            audioChain << QStringLiteral("equalizer=f=%1:t=o:w=1:g=%2")
+                              .arg(eqFrequencies[band]).arg(number(gain));
+        }
+        if (clip.audioDenoise)
+            audioChain << QStringLiteral("afftdn=nf=-25");
+        if (clip.audioCompressor)
+            audioChain << QStringLiteral("acompressor=threshold=0.125:ratio=3:attack=20:release=250");
+        if (clip.audioNormalize)
+            audioChain << QStringLiteral("loudnorm=I=-16:TP=-1.5:LRA=11");
+
+        if (std::abs(clip.audioPan) > 0.01) {
+            const double pan = clip.audioPan / 100.0;
+            const double leftGain = pan > 0.0 ? 1.0 - pan : 1.0;
+            const double rightGain = pan < 0.0 ? 1.0 + pan : 1.0;
+            audioChain << QStringLiteral("pan=stereo|c0=%1*FL|c1=%2*FR")
+                              .arg(number(leftGain), number(rightGain));
+        }
+
+        audioChain << QStringLiteral("volume=%1").arg(number(clip.audioMuted ? 0.0 : clip.volume / 100.0));
+        const double fadeIn = qMin(clip.duration, clip.audioFadeIn);
+        const double fadeOut = qMin(clip.duration, clip.audioFadeOut);
+        if (fadeIn > 0.001)
+            audioChain << QStringLiteral("afade=t=in:st=0:d=%1").arg(number(fadeIn));
+        if (fadeOut > 0.001)
+            audioChain << QStringLiteral("afade=t=out:st=%1:d=%2")
+                              .arg(number(qMax(0.0, clip.duration - fadeOut)), number(fadeOut));
+        if (clip.audioLimiter)
+            audioChain << QStringLiteral("alimiter=limit=0.95");
+
+        filters << QStringLiteral("[%1:a:0]%2,adelay=%3|%3[%4]")
+                       .arg(clip.inputIndex)
+                       .arg(audioChain.join(QLatin1Char(',')))
+                       .arg(delay)
+                       .arg(label);
         audioLabels << QStringLiteral("[%1]").arg(label);
         ++audioSerial;
     }
