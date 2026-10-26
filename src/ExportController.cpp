@@ -185,6 +185,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.brightness = boundedItemValue(item, QStringLiteral("brightness"), 0.0, -1.0, 1.0);
         clip.contrast = boundedItemValue(item, QStringLiteral("contrast"), 0.0, -1.0, 1.0);
         clip.saturation = boundedItemValue(item, QStringLiteral("saturation"), 0.0, -1.0, 1.0);
+        clip.blur = boundedItemValue(item, QStringLiteral("blur"), 0.0, 0.0, 100.0);
         clip.fontSize = boundedItemValue(item, QStringLiteral("fontSize"), 42.0, 8.0, 180.0);
         const QString requestedFont = item.value(QStringLiteral("fontFamily"), QStringLiteral("Sans")).toString();
         const QStringList supportedFonts = { QStringLiteral("Sans"), QStringLiteral("Serif"),
@@ -303,6 +304,10 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                          "y='ih/2-(ih/zoom/2)':d=1:s=%3x%4:fps=%1,")
                               .arg(m_outputFps).arg(zoomExpression).arg(scaledWidth).arg(scaledHeight);
         }
+        // Blur is stored as 0..100 in the editor and converted to a bounded
+        // Gaussian sigma for the final-resolution FFmpeg export.
+        if (clip.blur > 0.0)
+            zoomFilter += QStringLiteral("gblur=sigma=%1:steps=2,").arg(number(clip.blur * 0.24));
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
