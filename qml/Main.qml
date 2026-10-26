@@ -3268,6 +3268,15 @@ ApplicationWindow {
                             clip: true
                             layer.enabled: true
 
+                            // Keep the captured texture opaque where the source video
+                            // doesn't cover the canvas (letterboxing / transparent gaps).
+                            // Otherwise MultiEffect can show those pixels as a white block.
+                            Rectangle {
+                                anchors.fill: parent
+                                color: theme.background
+                                z: -1
+                            }
+
                         VideoOutput {
                             id: videoOutput
                             anchors.fill: parent
