@@ -150,6 +150,10 @@ ApplicationWindow {
     property string timelineImageClipId: ""
     property bool timelineImageActive: false
     property real timelineSeekPending: -1
+    property string timelineUnderlayUrl: ""
+    property string timelineUnderlayClipId: ""
+    property real timelineUnderlayClipStart: -1
+    property real timelineUnderlaySeekPending: -1
     // Cached reverse clips play forward from a local proxy instead of seeking the
     // original compressed stream backwards on every timer tick.
     property var reversePreviewCache: ({})
@@ -1078,6 +1082,7 @@ ApplicationWindow {
         var start = isFinite(requested) ? Math.max(0, requested) : 0
         var clipDuration = Number(duration)
         if (!isFinite(clipDuration) || clipDuration <= 0) clipDuration = 36
+
         var blockers = []
         for (var i = 0; i < mediaFiles.length; ++i) {
             var item = mediaFiles[i]
@@ -1087,46 +1092,68 @@ ApplicationWindow {
                 continue
             var otherStartValue = Number(item.start)
             var otherStart = isFinite(otherStartValue) ? Math.max(0, otherStartValue) : 0
-            blockers.push({
-                start: otherStart,
-                end: otherStart + timelineClipDuration(item)
-            })
+            var otherEnd = otherStart + timelineClipDuration(item)
+            if (isFinite(otherEnd) && otherEnd > otherStart)
+                blockers.push({ start: otherStart, end: otherEnd })
         }
         blockers.sort(function(a, b) { return a.start - b.start })
 
-        // Magnetic edge snapping: within 12 screen pixels, align the dragged
-        // clip's start/end exactly with a neighboring clip's end/start.
-        var tolerance = 12 / Math.max(0.001, timelineCanvas.timelineScale)
-        var nearest = start
-        var nearestDistance = tolerance + 1
-        for (var j = 0; j < blockers.length; ++j) {
-            var edges = [blockers[j].start - clipDuration, blockers[j].end]
-            for (var e = 0; e < edges.length; ++e) {
-                var candidate = Math.max(0, edges[e])
-                var distance = Math.abs(candidate - start)
-                if (distance <= tolerance && distance < nearestDistance) {
-                    nearest = candidate
-                    nearestDistance = distance
-                }
-            }
-        }
-        start = nearest
-
-        // If the proposed interval overlaps, move it to a free edge.
-        var changed = true
-        while (changed) {
-            changed = false
+        function isFree(candidate) {
             for (var k = 0; k < blockers.length; ++k) {
-                if (start < blockers[k].end && start + clipDuration > blockers[k].start) {
-                    var left = blockers[k].start - clipDuration
-                    var right = blockers[k].end
-                    start = left >= 0 && Math.abs(left - start) < Math.abs(right - start) ? left : right
-                    changed = true
-                    break
-                }
+                if (candidate < blockers[k].end - 0.0001
+                        && candidate + clipDuration > blockers[k].start + 0.0001)
+                    return false
+            }
+            return true
+        }
+
+        // Collect all places where the clip can touch an existing clip edge.
+        // Checking every candidate against every blocker prevents the old
+        // left/right loop from bouncing forever between two occupied gaps.
+        var candidates = [start]
+        for (var j = 0; j < blockers.length; ++j) {
+            candidates.push(Math.max(0, blockers[j].start - clipDuration))
+            candidates.push(Math.max(0, blockers[j].end))
+        }
+
+        // Keep magnetic edge snapping, but only snap to a location that is
+        // actually clear on the whole track.
+        var tolerance = 12 / Math.max(0.001, timelineCanvas.timelineScale)
+        var snapped = -1
+        var snapDistance = tolerance + 0.0001
+        for (var c = 1; c < candidates.length; ++c) {
+            var edge = candidates[c]
+            var edgeDistance = Math.abs(edge - start)
+            if (edgeDistance <= tolerance && edgeDistance < snapDistance && isFree(edge)) {
+                snapped = edge
+                snapDistance = edgeDistance
             }
         }
-        return Math.max(0, start)
+        if (snapped >= 0) return snapped
+        if (isFree(start)) return start
+
+        var best = -1
+        var bestDistance = Number.MAX_VALUE
+        for (var p = 1; p < candidates.length; ++p) {
+            var candidate = candidates[p]
+            if (!isFree(candidate)) continue
+            var distance = Math.abs(candidate - start)
+            if (distance < bestDistance
+                    || (Math.abs(distance - bestDistance) < 0.0001 && candidate >= start && best < start)) {
+                best = candidate
+                bestDistance = distance
+            }
+        }
+
+        // If a legacy project contains already-overlapping clips, the end of
+        // the latest blocker is always a safe fallback.
+        if (best < 0) {
+            var latestEnd = 0
+            for (var q = 0; q < blockers.length; ++q)
+                latestEnd = Math.max(latestEnd, blockers[q].end)
+            best = latestEnd
+        }
+        return Math.max(0, best)
     }
 
     function timelineVideoAt(seconds) {
@@ -1151,6 +1178,99 @@ ApplicationWindow {
         if (candidates.length === 0) return null
         candidates.sort(function(a, b) { return Number(a.track) - Number(b.track) })
         return candidates[0]
+    }
+
+    // V2 (track 0) is the foreground and V1 (track 1) can play beneath it.
+    // The main preview player only decodes one clip, so this helper identifies
+    // the second simultaneous video stream for a dedicated decoder.
+    function timelineUnderlayVideoAt(seconds) {
+        var upper = mediaFiles.filter(function(item) {
+            return Number(item.track) === 0 && item.kind === "video"
+                && Number(item.start || 0) <= seconds
+                && Number(item.start || 0) + timelineClipDuration(item) > seconds
+        })
+        if (!upper.length) return null
+        upper.sort(function(a, b) { return Number(b.start || 0) - Number(a.start || 0) })
+        var lower = mediaFiles.filter(function(item) {
+            return Number(item.track) === 1 && item.kind === "video"
+                && Number(item.start || 0) <= seconds
+                && Number(item.start || 0) + timelineClipDuration(item) > seconds
+        })
+        if (!lower.length) return null
+        lower.sort(function(a, b) { return Number(b.start || 0) - Number(a.start || 0) })
+        return lower[0]
+    }
+
+    function syncTimelineUnderlay(seconds) {
+        var clip = timelineUnderlayVideoAt(seconds)
+        if (!clip) {
+            timelineUnderlayPlayer.pause()
+            timelineUnderlayUrl = ""
+            timelineUnderlayClipId = ""
+            timelineUnderlayClipStart = -1
+            timelineUnderlaySeekPending = -1
+            return
+        }
+
+        var id = String(clip.clipId || "")
+        var clipStart = Number(clip.start || 0)
+        var localTime = Math.max(0, Number(seconds) - clipStart)
+        var proxyReady = root.hasTimelineReversePreview(clip)
+        if (clip.reverse && !proxyReady) {
+            if (timelineUnderlayUrl !== "") {
+                timelineUnderlayPlayer.pause()
+                timelineUnderlayUrl = ""
+            }
+            timelineUnderlayClipId = id
+            timelineUnderlayClipStart = clipStart
+            timelineUnderlaySeekPending = -1
+            var request = reversePreviewRequests[id]
+            if ((!request || request.status !== "failed") && !mediaTools.reversePreviewRunning)
+                requestReversePreview(clip)
+            return
+        }
+
+        var playbackUrl = root.timelinePlaybackUrl(clip)
+        var sourceTime = proxyReady ? localTime
+            : (clip.reverse
+                ? Math.max(Number(clip.sourceOffset || 0),
+                    Number(clip.sourceOffset || 0) + timelineClipDuration(clip) - localTime - 0.04)
+                : Math.max(0, Number(clip.sourceOffset || 0) + localTime))
+        var target = sourceTime * 1000
+        var sourceChanged = playbackUrl !== String(timelineUnderlayUrl)
+        var clipChanged = id !== String(timelineUnderlayClipId)
+            || clipStart !== timelineUnderlayClipStart
+
+        if (sourceChanged || clipChanged) {
+            timelineUnderlayPlayer.pause()
+            timelineUnderlayClipId = id
+            timelineUnderlayClipStart = clipStart
+            timelineUnderlaySeekPending = sourceTime
+            if (sourceChanged) {
+                timelineUnderlayUrl = playbackUrl
+                return
+            }
+        }
+
+        var ready = timelineUnderlayPlayer.mediaStatus === MediaPlayer.LoadedMedia
+            || timelineUnderlayPlayer.mediaStatus === MediaPlayer.BufferedMedia
+            || timelineUnderlayPlayer.mediaStatus === MediaPlayer.EndOfMedia
+        if (!ready) return
+
+        if (timelineUnderlaySeekPending >= 0) {
+            timelineUnderlayPlayer.position = timelineUnderlaySeekPending * 1000
+            timelineUnderlaySeekPending = -1
+        } else if (Math.abs(timelineUnderlayPlayer.position - target)
+                > (timelinePlaybackTimer.running ? 500 : 120)) {
+            timelineUnderlayPlayer.position = target
+        }
+
+        if (timelinePlaybackTimer.running) {
+            if (timelineUnderlayPlayer.playbackState !== MediaPlayer.PlayingState)
+                timelineUnderlayPlayer.play()
+        } else {
+            timelineUnderlayPlayer.pause()
+        }
     }
 
     function splitSelectedTimelineClip() {
@@ -1328,6 +1448,7 @@ ApplicationWindow {
     function updateTimelinePreview(seconds) {
         var clip = timelineVideoAt(seconds)
         timelinePreviewActive = true
+        syncTimelineUnderlay(seconds)
         if (!clip) {
             timelineImageActive = false
             timelineImageUrl = ""
@@ -2073,6 +2194,28 @@ ApplicationWindow {
                 }
             } else if (mediaStatus === MediaPlayer.InvalidMedia) {
                 root.statusMessage = "Не удалось открыть видео. Проверь формат и кодеки."
+            }
+        }
+    }
+
+    MediaPlayer {
+        id: timelineUnderlayPlayer
+        source: root.timelineUnderlayUrl
+        videoOutput: timelineUnderlayVideoOutput
+        audioOutput: AudioOutput { volume: 0.0 }
+        onMediaStatusChanged: {
+            if (mediaStatus === MediaPlayer.LoadedMedia
+                    || mediaStatus === MediaPlayer.BufferedMedia
+                    || mediaStatus === MediaPlayer.EndOfMedia) {
+                if (root.timelineUnderlaySeekPending >= 0) {
+                    position = root.timelineUnderlaySeekPending * 1000
+                    root.timelineUnderlaySeekPending = -1
+                }
+                if (timelinePlaybackTimer.running
+                        && root.timelineUnderlayVideoAt(root.timelinePosition) !== null)
+                    play()
+                else
+                    pause()
             }
         }
     }
@@ -3842,6 +3985,62 @@ ApplicationWindow {
                             }
 
                         VideoOutput {
+                            id: timelineUnderlayVideoOutput
+                            anchors.fill: parent
+                            fillMode: VideoOutput.PreserveAspectFit
+                            visible: root.timelinePreviewActive
+                                && root.timelineUnderlayVideoAt(root.timelinePosition) !== null
+                            opacity: root.timelineVisualOpacity(
+                                root.timelineUnderlayVideoAt(root.timelinePosition), root.timelinePosition)
+                            transform: [
+                                Scale {
+                                    xScale: root.timelineClipScaleAt(
+                                        root.timelineUnderlayVideoAt(root.timelinePosition), root.timelinePosition) / 100
+                                    yScale: root.timelineClipScaleAt(
+                                        root.timelineUnderlayVideoAt(root.timelinePosition), root.timelinePosition) / 100
+                                    origin.x: timelineUnderlayVideoOutput.width / 2
+                                    origin.y: timelineUnderlayVideoOutput.height / 2
+                                },
+                                Rotation {
+                                    angle: root.timelineClipProperty(
+                                        root.timelineUnderlayVideoAt(root.timelinePosition), "rotation", 0)
+                                    origin.x: timelineUnderlayVideoOutput.width / 2
+                                    origin.y: timelineUnderlayVideoOutput.height / 2
+                                },
+                                Translate {
+                                    x: root.timelinePreviewOffsetX(
+                                        root.timelineUnderlayVideoAt(root.timelinePosition), previewCanvas.width)
+                                    y: root.timelinePreviewOffsetY(
+                                        root.timelineUnderlayVideoAt(root.timelinePosition), previewCanvas.height)
+                                }
+                            ]
+                            layer.enabled: root.timelineClipProperty(
+                                root.timelineUnderlayVideoAt(root.timelinePosition), "brightness", 0) !== 0
+                                || root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "contrast", 0) !== 0
+                                || root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "saturation", 0) !== 0
+                                || root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "blur", 0) > 0
+                            layer.effect: MultiEffect {
+                                brightness: root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "brightness", 0)
+                                contrast: root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "contrast", 0)
+                                saturation: root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "saturation", 0)
+                                blurEnabled: root.timelineClipProperty(
+                                    root.timelineUnderlayVideoAt(root.timelinePosition), "blur", 0) > 0
+                                blur: Math.max(0, Math.min(1,
+                                    root.timelineClipProperty(
+                                        root.timelineUnderlayVideoAt(root.timelinePosition), "blur", 0) / 100))
+                                blurMax: 32
+                                autoPaddingEnabled: false
+                            }
+                            z: -0.5
+                        }
+
+                        VideoOutput {
                             id: videoOutput
                             anchors.fill: parent
                             fillMode: VideoOutput.PreserveAspectFit
@@ -4967,18 +5166,19 @@ ApplicationWindow {
                                             function updateResize(sceneX) {
                                                 var delta = (sceneX - resizeAnchorX) / Math.max(0.001, timelineCanvas.timelineScale)
                                                 var maxDuration = 1000000
-                                                var originalEnd = resizeOriginalStart + resizeOriginalDuration
                                                 for (var i = 0; i < root.mediaFiles.length; ++i) {
                                                     var other = root.mediaFiles[i]
                                                     if (String(other.clipId || "") === String(modelData.clipId || "")
                                                             || Number(other.track) !== Number(modelData.track))
                                                         continue
                                                     var otherStart = Number(other.start || 0)
-                                                    if (otherStart >= originalEnd - 0.001)
+                                                    // Right-edge resize may never cross the next clip's start.
+                                                    if (otherStart > resizeOriginalStart + 0.001)
                                                         maxDuration = Math.min(maxDuration, otherStart - resizeOriginalStart)
                                                 }
-                                                resizePreviewDuration = Math.max(0.5, Math.min(maxDuration,
-                                                    Math.round((resizeOriginalDuration + delta) * 10) / 10))
+                                                var wanted = Math.round((resizeOriginalDuration + delta) * 10) / 10
+                                                var minimum = Math.min(0.1, maxDuration)
+                                                resizePreviewDuration = Math.max(minimum, Math.min(maxDuration, wanted))
                                                 root.timelineDragHorizon = Math.max(root.timelineDragHorizon,
                                                     resizeOriginalStart + resizePreviewDuration)
                                             }
@@ -4988,10 +5188,17 @@ ApplicationWindow {
                                                 var clipId = String(modelData.clipId || "")
                                                 resizingEdge = ""
                                                 root.timelineAutoScrollDirection = 0
+                                                // Final guard: also relocate clips from older projects if
+                                                // the resized interval would collide with something already there.
+                                                var newStart = root.findFreeTimelineStart(Number(modelData.track),
+                                                    Number(modelData.start || 0), newDuration, clipId)
+                                                var didRelocate = Math.abs(newStart - Number(modelData.start || 0)) > 0.001
                                                 var updated = root.mediaFiles.slice()
                                                 for (var i = 0; i < updated.length; ++i) {
                                                     if (String(updated[i].clipId || "") === clipId) {
-                                                        updated[i] = Object.assign({}, updated[i], { duration: newDuration })
+                                                        updated[i] = Object.assign({}, updated[i], {
+                                                            start: newStart, duration: newDuration
+                                                        })
                                                         break
                                                     }
                                                 }
@@ -4999,7 +5206,9 @@ ApplicationWindow {
                                                 root.mediaFiles = updated
                                                 root.timelineDragHorizon = 0
                                                 root.saveTimelineMedia(updated)
-                                                root.statusMessage = "Длина клипа изменена"
+                                                root.statusMessage = didRelocate
+                                                    ? "Длительность изменена; клип сдвинут, чтобы избежать наложения"
+                                                    : "Длина клипа изменена"
                                             } 
                                              x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
                                                + (draggingClip ? dragOffsetX : 0)
