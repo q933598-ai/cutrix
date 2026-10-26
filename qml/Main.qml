@@ -3614,10 +3614,17 @@ ApplicationWindow {
                                 delegate: Rectangle {
                                     id: viewportScaleHandle
                                     required property var modelData
-                                    property point targetPoint: transformBounds.mapToItem(
-                                        transformOverlay,
-                                        modelData.horizontal < 0 ? 0 : transformBounds.width,
-                                        modelData.vertical < 0 ? 0 : transformBounds.height)
+                                    // Compute the transformed corner directly from properties.
+                                    // mapToItem() in a binding may not invalidate when only the
+                                    // referenced item's transform changes, leaving handles behind.
+                                    readonly property real angleRad: transformBounds.rotation * Math.PI / 180
+                                    readonly property real cornerX: modelData.horizontal * transformBounds.width / 2
+                                    readonly property real cornerY: modelData.vertical * transformBounds.height / 2
+                                    property point targetPoint: Qt.point(
+                                        transformBounds.x + transformBounds.width / 2
+                                            + cornerX * Math.cos(angleRad) - cornerY * Math.sin(angleRad),
+                                        transformBounds.y + transformBounds.height / 2
+                                            + cornerX * Math.sin(angleRad) + cornerY * Math.cos(angleRad))
                                     width: 14
                                     height: 14
                                     radius: 2
@@ -3648,8 +3655,13 @@ ApplicationWindow {
                             }
                             Rectangle {
                                 id: viewportRotateHandle
-                                property point targetPoint: transformBounds.mapToItem(
-                                    transformOverlay, transformBounds.width / 2, 0)
+                                // The rotation grip follows the transformed top-center point.
+                                readonly property real angleRad: transformBounds.rotation * Math.PI / 180
+                                property point targetPoint: Qt.point(
+                                    transformBounds.x + transformBounds.width / 2
+                                        + transformBounds.height / 2 * Math.sin(angleRad),
+                                    transformBounds.y + transformBounds.height / 2
+                                        - transformBounds.height / 2 * Math.cos(angleRad))
                                 width: 12
                                 height: 22
                                 x: Math.max(0, Math.min(parent.width - width, targetPoint.x - width / 2))
