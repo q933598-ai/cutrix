@@ -1,0 +1,33 @@
+# Maintainer: Cutrix contributors
+# Development package from test/ui-prototype. Switch _branch to main for a release build.
+
+pkgname=cutrix-git
+pkgver=0.1.0.r209.g17dccd6
+pkgrel=1
+pkgdesc="Pixel-style nonlinear video editor built with C++ and Qt/QML"
+arch=('x86_64')
+url="https://github.com/q933598-ai/cutrix"
+license=('unknown') # Set a real project license before publishing a binary package.
+depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'ffmpeg')
+makedepends=('base-devel' 'cmake' 'ninja' 'git')
+optdepends=('whisper.cpp: local automatic subtitles via whisper-cli')
+provides=('cutrix')
+conflicts=('cutrix')
+source=("cutrix::git+https://github.com/q933598-ai/cutrix.git#branch=test/ui-prototype")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/cutrix"
+  printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cmake -S "$srcdir/cutrix" -B "$srcdir/cutrix/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build "$srcdir/cutrix/build" --parallel
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install "$srcdir/cutrix/build"
+}
