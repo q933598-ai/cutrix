@@ -568,6 +568,28 @@ ApplicationWindow {
         return 36
     }
 
+    function audioPreviewGain(item, seconds) {
+        if (!item || Boolean(item.audioMuted))
+            return 0
+        var volume = Number(item.volume)
+        if (!isFinite(volume)) volume = 100
+        volume = Math.max(0, Math.min(200, volume)) / 100
+        var duration = Math.max(0.001, timelineClipDuration(item))
+        var localTime = Number(seconds) - Number(item.start || 0)
+        if (!isFinite(localTime) || localTime < 0 || localTime > duration)
+            return 0
+        var fadeIn = Math.max(0, Math.min(duration, Number(item.audioFadeIn || 0)))
+        var fadeOut = Math.max(0, Math.min(duration, Number(item.audioFadeOut || 0)))
+        var envelope = 1
+        if (fadeIn > 0.001 && localTime < fadeIn)
+            envelope = Math.min(envelope, localTime / fadeIn)
+        if (fadeOut > 0.001 && localTime > duration - fadeOut)
+            envelope = Math.min(envelope, (duration - localTime) / fadeOut)
+        // Qt AudioOutput expects a linear gain in [0, 1]. Export preserves gains
+        // up to 200%, while preview clamps to the output's supported range.
+        return Math.max(0, Math.min(1, volume * envelope))
+    }
+
     function timelineTrackForKind(kind, requestedTrack) {
         var track = Math.max(0, Math.min(5, Number(requestedTrack)))
         if (kind === "effect") return 5
@@ -1870,7 +1892,7 @@ ApplicationWindow {
         delegate: MediaPlayer {
             required property var modelData
             source: modelData.url
-            audioOutput: AudioOutput { volume: root.timelineClipProperty(modelData, "volume", 100) / 100 }
+            audioOutput: AudioOutput { volume: root.audioPreviewGain(modelData, root.timelinePosition) }
             property bool timelineAudioActive: timelinePlaybackTimer.running
                 && Number(modelData.start || 0) <= root.timelinePosition
                 && Number(modelData.start || 0) + root.timelineClipDuration(modelData) > root.timelinePosition
@@ -1926,12 +1948,13 @@ ApplicationWindow {
         source: root.timelinePreviewActive ? root.timelinePreviewUrl : root.selectedMediaUrl
         videoOutput: videoOutput
         audioOutput: AudioOutput {
-            volume: !root.timelinePreviewActive ? 1.0
-                : (timelinePlaybackTimer.running
-                    ? (root.hasTimelineReversePreview(root.timelineFootageAt(root.timelinePosition))
-                        ? root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "volume", 100) / 100
-                        : 0.0)
-                    : root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "volume", 100) / 100)
+            volume: {
+                if (!root.timelinePreviewActive) return 1.0
+                var clip = root.timelineFootageAt(root.timelinePosition)
+                if (timelinePlaybackTimer.running && !root.hasTimelineReversePreview(clip))
+                    return 0.0
+                return root.audioPreviewGain(clip, root.timelinePosition)
+            }
         }
         onPlaybackStateChanged: root.isPlaying = playbackState === MediaPlayer.PlayingState
         onErrorOccurred: function(error, errorString) {
@@ -3502,7 +3525,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "Настройки сохраняются в проекте и применяются при экспорте. Предпрослушивание EQ в реальном времени пока не подключено."
+                            text: "Настройки сохраняются в проекте. Громкость, отключение и затухание слышны в предпросмотре; EQ и обработка применяются при экспорте."
                             color: theme.muted
                             font.family: "monospace"
                             font.pixelSize: 9 * root.uiFontScale / 100
