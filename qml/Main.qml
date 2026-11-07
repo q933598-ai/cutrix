@@ -795,7 +795,7 @@ ApplicationWindow {
         if (key === "scale") return { min: 10, max: 300 }
         if (key === "rotation") return { min: -360, max: 360 }
         if (key === "opacity") return { min: 0, max: 100 }
-        return { min: -1000, max: 1000 }
+        return { min: -7680, max: 7680 }
     }
 
     function keyframeBaseValue(item, key) {
@@ -4160,6 +4160,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 104
                             antialiasing: true
+                            Component.onCompleted: requestPaint()
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.clearRect(0, 0, width, height)
@@ -4659,7 +4660,8 @@ ApplicationWindow {
                                     origin.y: timelineImagePreview.height / 2
                                 },
                                 Rotation {
-                                    angle: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0)
+                                    angle: root.timelineAnimatedValue(root.timelineVideoAt(root.timelinePosition), "rotation", root.timelinePosition,
+                                        root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0))
                                     origin.x: timelineImagePreview.width / 2
                                     origin.y: timelineImagePreview.height / 2
                                 },
