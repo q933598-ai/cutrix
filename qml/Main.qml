@@ -4268,9 +4268,69 @@ ApplicationWindow {
                                 ctx.strokeStyle = theme.muted; ctx.lineWidth = 1; ctx.stroke()
                             }
                             MouseArea {
+                                id: keyframeGraphMouse
                                 anchors.fill: parent
                                 enabled: root.selectedClipCanZoom
+                                property int draggedFrameIndex: -1
+                                property var frameDraft: []
+                                property bool movedFrame: false
+                                onPressed: function(mouse) {
+                                    movedFrame = false
+                                    draggedFrameIndex = -1
+                                    frameDraft = []
+                                    var clip = root.selectedTimelineClip
+                                    if (!clip) return
+                                    var duration = Math.max(0.001, root.timelineClipDuration(clip))
+                                    var frames = root.timelineKeyframesFor(clip, root.animationGraphProperty)
+                                    var nearestDistance = 12
+                                    for (var i = 0; i < frames.length; ++i) {
+                                        var keyX = width * frames[i].time / duration
+                                        var range = root.animationPropertyRange(root.animationGraphProperty)
+                                        var normalized = (frames[i].value - range.min) / (range.max - range.min)
+                                        var keyY = height - Math.max(0, Math.min(1, normalized)) * (height - 12) - 6
+                                        var distance = Math.sqrt(Math.pow(mouse.x - keyX, 2)
+                                            + Math.pow(mouse.y - keyY, 2))
+                                        if (distance <= nearestDistance) {
+                                            nearestDistance = distance
+                                            draggedFrameIndex = i
+                                        }
+                                    }
+                                    for (var j = 0; j < frames.length; ++j)
+                                        frameDraft.push(Object.assign({}, frames[j]))
+                                }
+                                onPositionChanged: function(mouse) {
+                                    if (!pressed || draggedFrameIndex < 0 || width <= 0 || height <= 12) return
+                                    var clip = root.selectedTimelineClip
+                                    if (!clip) return
+                                    var duration = Math.max(0.001, root.timelineClipDuration(clip))
+                                    var range = root.animationPropertyRange(root.animationGraphProperty)
+                                    var horizontal = Math.max(0, Math.min(1, mouse.x / width))
+                                    var vertical = 1 - Math.max(0, Math.min(1, (mouse.y - 6) / (height - 12)))
+                                    frameDraft[draggedFrameIndex].time = horizontal * duration
+                                    frameDraft[draggedFrameIndex].value = range.min
+                                        + vertical * (range.max - range.min)
+                                    movedFrame = true
+                                    keyframeCurveCanvas.requestPaint()
+                                }
+                                onReleased: function(mouse) {
+                                    if (movedFrame && draggedFrameIndex >= 0) {
+                                        var clip = root.selectedTimelineClip
+                                        var index = draggedFrameIndex
+                                        frameDraft.sort(function(a, b) { return a.time - b.time })
+                                        var tracks = Object.assign({}, clip.keyframes || ({}))
+                                        tracks[root.animationGraphProperty] = frameDraft
+                                        var newTime = frameDraft[index].time
+                                        root.setSelectedClipProperties({ keyframes: tracks }, "Переместить ключевой кадр")
+                                        root.timelinePosition = Number(clip.start || 0) + newTime
+                                        root.updateTimelinePreview(root.timelinePosition)
+                                    }
+                                    draggedFrameIndex = -1
+                                }
                                 onClicked: function(mouse) {
+                                    if (movedFrame) {
+                                        movedFrame = false
+                                        return
+                                    }
                                     var clip = root.selectedTimelineClip
                                     var duration = Math.max(0.001, root.timelineClipDuration(clip))
                                     root.timelinePosition = Number(clip.start || 0)
