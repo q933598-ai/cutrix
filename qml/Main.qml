@@ -1038,6 +1038,13 @@ ApplicationWindow {
         if (index >= 0) {
             frames[index].value = nextValue
         } else {
+            if (frames.length === 0 && localTime > 0.025) {
+                frames.push({
+                    time: 0,
+                    value: keyframeBaseValue(selectedTimelineClip, key),
+                    easing: "linear"
+                })
+            }
             frames.push({
                 time: localTime,
                 value: nextValue,
@@ -4481,7 +4488,7 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             text: root.selectedClipCanAnimate
-                                ? "Выбери параметр, поставь курсор времени и добавь ключевой кадр. Между кадрами значение будет плавно меняться."
+                                ? "Поставь курсор времени, добавь первый ключ. Затем перемести курсор и измени значение — появится движение между кадрами."
                                 : "Для работы с ключевыми кадрами выбери видео, изображение или текстовый клип."
                             color: theme.muted
                             font.family: "monospace"
