@@ -3361,7 +3361,7 @@ ApplicationWindow {
                     anchors.margins: 7
                     spacing: 5
                     Repeater {
-                        model: [["▣", "Медиа"], ["✣", "Эффекты"], ["◈", "Переходы"], ["T", "Текст"], ["✿", "Стикеры"], ["♫", "Аудио"], ["⚙", "Настройки"]]
+                        model: [["▣", "Медиа"], ["✣", "Эффекты"], ["◈", "Переходы"], ["✦", "Анимация"], ["T", "Текст"], ["✿", "Стикеры"], ["♫", "Аудио"], ["⚙", "Настройки"]]
                         delegate: Rectangle {
                             required property var modelData
                             width: parent.width
@@ -3392,6 +3392,8 @@ ApplicationWindow {
                                         root.activeSidebarSection = "Аудио"
                                     } else if (modelData[1] === "Переходы") {
                                         root.activeSidebarSection = "Переходы"
+                                    } else if (modelData[1] === "Анимация") {
+                                        root.activeSidebarSection = "Анимация"
                                     } else {
                                         root.statusMessage = modelData[1] + " — раздел пока в разработке"
                                     }
@@ -3418,6 +3420,7 @@ ApplicationWindow {
                     visible: root.activeSidebarSection !== "Эффекты"
                         && root.activeSidebarSection !== "Аудио"
                         && root.activeSidebarSection !== "Переходы"
+                        && root.activeSidebarSection !== "Анимация"
                     Text { text: "МЕДИАФАЙЛЫ"; color: theme.accent; font.family: "monospace"; font.bold: true }
                     TextField {
                         id: mediaSearchField
@@ -4253,9 +4256,8 @@ ApplicationWindow {
                             font.pixelSize: 11 * root.uiFontScale / 100
                             wrapMode: Text.WordWrap
                         }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                         Text {
-                            text: "АНИМАЦИИ КЛИПА"
+                            text: "БЫСТРЫЕ ПРЕСЕТЫ"
                             color: theme.muted
                             font.family: "monospace"
                             font.pixelSize: 10 * root.uiFontScale / 100
@@ -4267,12 +4269,9 @@ ApplicationWindow {
                             rowSpacing: 4
                             Repeater {
                                 model: [
-                                    { label: "↗ Zoom In", preset: "zoom-in" },
-                                    { label: "↘ Zoom Out", preset: "zoom-out" },
-                                    { label: "◎ Smooth Zoom", preset: "smooth-zoom" },
-                                    { label: "◉ Fade + Zoom", preset: "fade-zoom-in" },
-                                    { label: "◌ Zoom + Fade", preset: "fade-zoom-out" },
-                                    { label: "✦ Pop", preset: "pop" },
+                                    { label: "↘ Появление", preset: "in" },
+                                    { label: "↗ Затухание", preset: "out" },
+                                    { label: "⇄ Вход + выход", preset: "both" },
                                     { label: "↺ Сбросить", preset: "none" }
                                 ]
                                 delegate: Button {
@@ -4280,11 +4279,11 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
                                     Layout.preferredHeight: 32
-                                    enabled: root.selectedClipCanTransition && root.selectedClipCanZoom
+                                    enabled: root.selectedClipCanTransition
                                     text: modelData.label
                                     font.family: "monospace"
                                     font.pixelSize: 10
-                                    onClicked: root.applyMotionPreset(modelData.preset)
+                                    onClicked: root.applyTransitionPreset(modelData.preset)
                                     palette.buttonText: theme.text
                                     background: Rectangle {
                                         color: theme.panelAlt
@@ -4294,15 +4293,159 @@ ApplicationWindow {
                                 }
                             }
                         }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Появление"
+                                color: theme.text
+                                font.family: "monospace"
+                                font.pixelSize: 10 * root.uiFontScale / 100
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "transitionIn", 0)).toFixed(1) + " с"
+                                color: theme.accent
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                            }
+                        }
+                        CutrixSlider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: Math.min(3, Math.max(0.1,
+                                root.selectedClipCanTransition ? root.timelineClipDuration(root.selectedTimelineClip) / 2 : 3))
+                            stepSize: 0.1
+                            enabled: root.selectedClipCanTransition
+                            value: root.timelineClipProperty(root.selectedTimelineClip, "transitionIn", 0)
+                            onMoved: root.setSelectedClipProperty("transitionIn", value, true, false)
+                            onPressedChanged: if (pressed) root.recordTimelineHistory("Длительность перехода")
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Затухание"
+                                color: theme.text
+                                font.family: "monospace"
+                                font.pixelSize: 10 * root.uiFontScale / 100
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "transitionOut", 0)).toFixed(1) + " с"
+                                color: theme.accent
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                            }
+                        }
+                        CutrixSlider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: Math.min(3, Math.max(0.1,
+                                root.selectedClipCanTransition ? root.timelineClipDuration(root.selectedTimelineClip) / 2 : 3))
+                            stepSize: 0.1
+                            enabled: root.selectedClipCanTransition
+                            value: root.timelineClipProperty(root.selectedTimelineClip, "transitionOut", 0)
+                            onMoved: root.setSelectedClipProperty("transitionOut", value, true, false)
+                            onPressedChanged: if (pressed) root.recordTimelineHistory("Длительность перехода")
+                        }
                         Text {
-                            text: "Пресеты меняют масштаб и прозрачность клипа, сохраняются в проекте и учитываются при экспорте."
+                            Layout.fillWidth: true
+                            text: "Переходы плавно открывают или скрывают клип через альфа-канал. При наличии клипа ниже по дорожке он будет виден под переходом. Эффекты сохраняются и применяются при экспорте."
                             color: theme.muted
                             font.family: "monospace"
                             font.pixelSize: 9 * root.uiFontScale / 100
                             wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                    }
+                }
+
+            }
+
+            ScrollView {
+                id: animationScroll
+                anchors.fill: parent
+                visible: root.activeSidebarSection === "Анимация"
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ColumnLayout {
+                    id: animationColumnLayout
+                    x: 9
+                    width: Math.max(1, animationScroll.availableWidth - 18)
+                    spacing: 9
+
+                    Text {
+                        text: "АНИМАЦИЯ КЛИПА"
+                        color: theme.accent
+                        font.family: "monospace"
+                        font.bold: true
+                        font.pixelSize: 12 * root.uiFontScale / 100
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.selectedClipCanAnimate
+                            ? String(root.selectedTimelineClip.name || root.selectedTimelineClip.kind || "Клип")
+                            : "Выбери клип на любой дорожке таймлайна."
+                        color: root.selectedClipCanAnimate ? theme.text : theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.timelineClipHasAnimation(root.selectedTimelineClip)
+                            ? "◆ АНИМАЦИЯ ВКЛЮЧЕНА · " + root.timelineClipKeyframeMarkers(root.selectedTimelineClip).length + " ключевых кадров"
+                            : "◇ Для этого клипа ещё нет анимации. Выбери пресет или добавь ключевые кадры вручную."
+                        color: root.timelineClipHasAnimation(root.selectedTimelineClip) ? theme.accent : theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 9 * root.uiFontScale / 100
+                        wrapMode: Text.WordWrap
+                    }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                    Text {
+                        text: "ГОТОВЫЕ АНИМАЦИИ"
+                        color: theme.muted
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: animationColumnLayout.width < 250 ? 1 : 2
+                        columnSpacing: 4
+                        rowSpacing: 4
+                        Repeater {
+                            model: root.animationPresetsFor(root.selectedTimelineClip)
+                            delegate: Button {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredHeight: 32
+                                enabled: root.selectedClipCanAnimate
+                                text: modelData.label
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                                onClicked: root.applyAnimationPreset(modelData.preset)
+                                palette.buttonText: theme.text
+                                background: Rectangle {
+                                    color: theme.panelAlt
+                                    border.color: theme.border
+                                    radius: 0
+                                }
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Button {
+                            text: "↺ Удалить анимацию"
+                            enabled: root.timelineClipHasAnimation(root.selectedTimelineClip)
+                            onClicked: root.clearSelectedAnimation()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                         Text {
                             text: "KEYFRAMES · КЛЮЧЕВЫЕ КАДРЫ"
                             color: theme.accent
@@ -4568,109 +4711,16 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                         }
                         Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                        Text {
-                            text: "БЫСТРЫЕ ПРЕСЕТЫ"
-                            color: theme.muted
-                            font.family: "monospace"
-                            font.pixelSize: 10 * root.uiFontScale / 100
-                        }
-                        GridLayout {
-                            Layout.fillWidth: true
-                            columns: transitionsColumnLayout.width < 250 ? 1 : 2
-                            columnSpacing: 4
-                            rowSpacing: 4
-                            Repeater {
-                                model: [
-                                    { label: "↘ Появление", preset: "in" },
-                                    { label: "↗ Затухание", preset: "out" },
-                                    { label: "⇄ Вход + выход", preset: "both" },
-                                    { label: "↺ Сбросить", preset: "none" }
-                                ]
-                                delegate: Button {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    Layout.minimumWidth: 0
-                                    Layout.preferredHeight: 32
-                                    enabled: root.selectedClipCanTransition
-                                    text: modelData.label
-                                    font.family: "monospace"
-                                    font.pixelSize: 10
-                                    onClicked: root.applyTransitionPreset(modelData.preset)
-                                    palette.buttonText: theme.text
-                                    background: Rectangle {
-                                        color: theme.panelAlt
-                                        border.color: theme.border
-                                        radius: 0
-                                    }
-                                }
-                            }
-                        }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text {
-                                text: "Появление"
-                                color: theme.text
-                                font.family: "monospace"
-                                font.pixelSize: 10 * root.uiFontScale / 100
-                            }
-                            Item { Layout.fillWidth: true }
-                            Text {
-                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "transitionIn", 0)).toFixed(1) + " с"
-                                color: theme.accent
-                                font.family: "monospace"
-                                font.pixelSize: 10
-                            }
-                        }
-                        CutrixSlider {
-                            Layout.fillWidth: true
-                            from: 0
-                            to: Math.min(3, Math.max(0.1,
-                                root.selectedClipCanTransition ? root.timelineClipDuration(root.selectedTimelineClip) / 2 : 3))
-                            stepSize: 0.1
-                            enabled: root.selectedClipCanTransition
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "transitionIn", 0)
-                            onMoved: root.setSelectedClipProperty("transitionIn", value, true, false)
-                            onPressedChanged: if (pressed) root.recordTimelineHistory("Длительность перехода")
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text {
-                                text: "Затухание"
-                                color: theme.text
-                                font.family: "monospace"
-                                font.pixelSize: 10 * root.uiFontScale / 100
-                            }
-                            Item { Layout.fillWidth: true }
-                            Text {
-                                text: Number(root.timelineClipProperty(root.selectedTimelineClip, "transitionOut", 0)).toFixed(1) + " с"
-                                color: theme.accent
-                                font.family: "monospace"
-                                font.pixelSize: 10
-                            }
-                        }
-                        CutrixSlider {
-                            Layout.fillWidth: true
-                            from: 0
-                            to: Math.min(3, Math.max(0.1,
-                                root.selectedClipCanTransition ? root.timelineClipDuration(root.selectedTimelineClip) / 2 : 3))
-                            stepSize: 0.1
-                            enabled: root.selectedClipCanTransition
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "transitionOut", 0)
-                            onMoved: root.setSelectedClipProperty("transitionOut", value, true, false)
-                            onPressedChanged: if (pressed) root.recordTimelineHistory("Длительность перехода")
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Переходы плавно открывают или скрывают клип через альфа-канал. При наличии клипа ниже по дорожке он будет виден под переходом. Эффекты сохраняются и применяются при экспорте."
-                            color: theme.muted
-                            font.family: "monospace"
-                            font.pixelSize: 9 * root.uiFontScale / 100
-                            wrapMode: Text.WordWrap
+                    Connections {
+                        target: root
+                        function onSelectedTimelineClipIdChanged() {
+                            var keys = root.animationPropertyKeys(root.selectedTimelineClip)
+                            if (keys.indexOf(root.animationGraphProperty) < 0)
+                                root.animationGraphProperty = keys.length ? keys[0] : "scale"
+                            keyframeCurveCanvas.requestPaint()
                         }
                     }
                 }
-
             }
 
             Rectangle {
