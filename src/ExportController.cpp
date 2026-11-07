@@ -632,7 +632,13 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                               .arg(number(leftGain), number(rightGain));
         }
 
-        audioChain << QStringLiteral("volume=%1").arg(number(clip.audioMuted ? 0.0 : clip.volume / 100.0));
+        const bool animatedVolume = hasKeyframes(clip.keyframes, QStringLiteral("volume"));
+        const QString volumeExpression = clip.audioMuted ? QStringLiteral("0")
+            : animatedVolume
+                ? QStringLiteral("(%1)/100").arg(escapeFilterExpression(keyframeExpression(
+                    clip.keyframes, QStringLiteral("volume"), clip.volume, QStringLiteral("t"))))
+                : number(clip.volume / 100.0);
+        audioChain << QStringLiteral("volume='%1':eval=frame").arg(volumeExpression);
         const double fadeIn = qMin(clip.duration, clip.audioFadeIn);
         const double fadeOut = qMin(clip.duration, clip.audioFadeOut);
         if (fadeIn > 0.001)
