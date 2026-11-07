@@ -847,6 +847,30 @@ ApplicationWindow {
             index >= 0 ? "Удалить ключевой кадр · " + key : "Добавить ключевой кадр · " + key)
     }
 
+    function setKeyframeValueAtPlayhead(key, value) {
+        if (!selectedTimelineClip || !selectedClipCanZoom) return
+        var nextValue = Number(value)
+        if (!isFinite(nextValue)) return
+        var range = animationPropertyRange(key)
+        nextValue = Math.max(range.min, Math.min(range.max, nextValue))
+        var frames = timelineKeyframesFor(selectedTimelineClip, key)
+        var localTime = keyframeLocalTime(selectedTimelineClip)
+        var index = keyframeIndexAtPlayhead(selectedTimelineClip, key)
+        if (index >= 0) {
+            frames[index].value = nextValue
+        } else {
+            frames.push({
+                time: localTime,
+                value: nextValue,
+                easing: keyframeEasingAtPlayhead(selectedTimelineClip, key)
+            })
+            frames.sort(function(a, b) { return a.time - b.time })
+        }
+        var tracks = Object.assign({}, selectedTimelineClip.keyframes || ({}))
+        tracks[key] = frames
+        setSelectedClipProperties({ keyframes: tracks }, "Изменить ключевой кадр · " + key)
+    }
+
     function keyframeEasingAtPlayhead(item, key) {
         var frames = timelineKeyframesFor(item, key)
         if (!frames.length) return "linear"
@@ -4154,6 +4178,41 @@ ApplicationWindow {
                                 onClicked: root.toggleSelectedKeyframe(root.animationGraphProperty)
                                 palette.buttonText: theme.text
                                 background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Значение"
+                                color: theme.muted
+                                font.family: "monospace"
+                                font.pixelSize: 9
+                            }
+                            SpinBox {
+                                id: keyframeValueEditor
+                                Layout.fillWidth: true
+                                editable: true
+                                from: Math.round(root.animationPropertyRange(root.animationGraphProperty).min)
+                                to: Math.round(root.animationPropertyRange(root.animationGraphProperty).max)
+                                value: Math.round(root.timelineAnimatedValue(root.selectedTimelineClip,
+                                    root.animationGraphProperty, root.timelinePosition,
+                                    root.keyframeBaseValue(root.selectedTimelineClip, root.animationGraphProperty)))
+                                enabled: root.selectedClipCanZoom
+                                onValueModified: root.setKeyframeValueAtPlayhead(root.animationGraphProperty, value)
+                                palette.text: theme.text
+                                background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
+                                contentItem: TextInput {
+                                    text: parent.displayText
+                                    color: theme.text
+                                    selectionColor: theme.accent
+                                    selectedTextColor: theme.background
+                                    horizontalAlignment: Qt.AlignHCenter
+                                    verticalAlignment: Qt.AlignVCenter
+                                    font.family: "monospace"
+                                    readOnly: !parent.editable
+                                    validator: parent.validator
+                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                }
                             }
                         }
                         Canvas {
