@@ -1041,6 +1041,8 @@ ApplicationWindow {
         saveTimelineMedia(mediaFiles)
         timelinePlaybackTimer.stop()
         mediaPlayer.pause()
+        transformPreviewOverride = ({})
+        transformGesture = null
         timelinePosition = Math.max(0, Number(clip.start || 0))
         animationPreviewStopAt = timelinePosition + Math.min(duration, endTime + 0.8)
         updateTimelinePreview(timelinePosition)
