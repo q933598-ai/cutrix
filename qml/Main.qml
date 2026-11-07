@@ -916,12 +916,17 @@ ApplicationWindow {
     }
 
     function previewSelectedAnimation() {
+        if (timelinePlaybackTimer.running) {
+            timelinePlaybackTimer.stop()
+            mediaPlayer.pause()
+            statusMessage = "Предпросмотр анимации остановлен"
+            return
+        }
         if (!selectedTimelineClip || !selectedClipCanAnimate
                 || !timelineClipHasAnimation(selectedTimelineClip)) {
             statusMessage = "Сначала добавь анимацию выбранному клипу"
             return
         }
-        if (timelinePlaybackTimer.running) timelinePlaybackTimer.stop()
         timelinePosition = Math.max(0, Number(selectedTimelineClip.start || 0))
         updateTimelinePreview(timelinePosition)
         timelinePlaybackTimer.start()
@@ -4510,7 +4515,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         Button {
-                            text: "▶ Предпросмотр"
+                            text: timelinePlaybackTimer.running ? "Ⅱ Остановить" : "▶ Предпросмотр"
                             enabled: root.timelineClipHasAnimation(root.selectedTimelineClip)
                             onClicked: root.previewSelectedAnimation()
                             palette.buttonText: theme.text
