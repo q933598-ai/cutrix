@@ -833,7 +833,8 @@ ApplicationWindow {
 
     function animationPresetsFor(item) {
         if (!item) return []
-        if (item.kind === "audio")
+        if (item.kind === "audio" || (item.kind === "video"
+                && (Number(item.track) === 2 || Number(item.track) === 3)))
             return [
                 { label: "♫ Fade In", preset: "fade-in" },
                 { label: "♫ Fade Out", preset: "fade-out" }
@@ -936,12 +937,14 @@ ApplicationWindow {
         }
         var applied = false
         if (preset === "fade-in") {
-            var fadeKey = clip.kind === "audio" ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
+            var fadeKey = clip.kind === "audio" || Number(clip.track) === 2 || Number(clip.track) === 3
+                ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
             var fadeBase = fadeKey === "volume" ? baseVolume : fadeKey === "blur"
                 ? keyframeBaseValue(clip, "blur") : baseOpacity
             applied = setTrack(fadeKey, 0, fadeBase, "easeOut")
         } else if (preset === "fade-out") {
-            var fadeOutKey = clip.kind === "audio" ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
+            var fadeOutKey = clip.kind === "audio" || Number(clip.track) === 2 || Number(clip.track) === 3
+                ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
             var fadeOutBase = fadeOutKey === "volume" ? baseVolume : fadeOutKey === "blur"
                 ? keyframeBaseValue(clip, "blur") : baseOpacity
             applied = setTrack(fadeOutKey, fadeOutBase, 0, "easeIn")
