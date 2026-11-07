@@ -81,7 +81,7 @@ ApplicationWindow {
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
     readonly property bool selectedClipCanAnimate: !!selectedTimelineClip
         && Number(selectedTimelineClip.track) >= 0
-        && ["video", "image", "text", "effect", "audio"].indexOf(String(selectedTimelineClip.kind || "")) >= 0
+        && animationPropertyKeys(selectedTimelineClip).length > 0
     readonly property bool selectedClipCanTransition: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
