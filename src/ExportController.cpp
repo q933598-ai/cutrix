@@ -540,22 +540,52 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         // to the chosen export frame so the title keeps its on-screen proportions.
         const int scaledFontSize = qMax(8, qRound(clip.fontSize * clip.scale / 100.0
                                                    * m_outputHeight / 360.0));
-        const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
+        const bool animatedScale = hasKeyframes(clip.keyframes, QStringLiteral("scale"));
+        const bool animatedRotation = hasKeyframes(clip.keyframes, QStringLiteral("rotation"));
+        const bool animatedOpacity = hasKeyframes(clip.keyframes, QStringLiteral("opacity"));
+        const bool animatedX = hasKeyframes(clip.keyframes, QStringLiteral("x"));
+        const bool animatedY = hasKeyframes(clip.keyframes, QStringLiteral("y"));
+        const QString fontSizeExpression = animatedScale
+            ? escapeFilterExpression(QStringLiteral("max(8,%1*(%2)/100)")
+                .arg(number(clip.fontSize * m_outputHeight / 360.0),
+                     keyframeExpression(clip.keyframes, QStringLiteral("scale"),
+                                        clip.scale, QStringLiteral("t"))))
+            : QString::number(scaledFontSize);
+        const QString titleOpacityExpression = animatedOpacity
+            ? escapeFilterExpression(keyframeExpression(clip.keyframes, QStringLiteral("opacity"),
+                                                        clip.opacity, QStringLiteral("t")) + QStringLiteral("/100"))
+            : number(clip.opacity / 100.0);
+        const QString angle = animatedRotation
+            ? escapeFilterExpression(QStringLiteral("(%1)*PI/180").arg(
+                keyframeExpression(clip.keyframes, QStringLiteral("rotation"), clip.rotation,
+                                   QStringLiteral("t"))))
+            : number(clip.rotation * 3.14159265358979323846 / 180.0);
+        const QString rotateDimensions = animatedRotation
+            ? QStringLiteral("ow=hypot(iw,ih):oh=ow")
+            : QStringLiteral("ow=rotw(iw):oh=roth(ih)");
+        const QString offsetXExpression = animatedX
+            ? escapeFilterExpression(keyframeExpression(clip.keyframes, QStringLiteral("x"),
+                clip.x, QStringLiteral("(t-%1)").arg(number(clip.start))))
+            : number(clip.x);
+        const QString offsetYExpression = animatedY
+            ? escapeFilterExpression(keyframeExpression(clip.keyframes, QStringLiteral("y"),
+                clip.y, QStringLiteral("(t-%1)").arg(number(clip.start))))
+            : number(clip.y);
         const QString label = QStringLiteral("title%1").arg(titleSerial);
         const QString titleSource = QStringLiteral("titlesrc%1").arg(titleSerial);
         filters << QStringLiteral("color=c=black@0:s=%1x%2:r=%3:d=%4,format=rgba,"
-                                 "drawtext=textfile='%5':font='%6':fontcolor=%7:fontsize=%8:borderw=3:"
-                                 "bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:alpha=%9,"
-                                 "rotate=%10:ow=rotw(iw):oh=roth(ih):c=black@0,"
+                                 "drawtext=textfile='%5':font='%6':fontcolor=%7:fontsize='%8':borderw=3:"
+                                 "bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2:alpha='%9',"
+                                 "rotate='%10':%13:c=black@0,"
                                  "setpts=PTS-STARTPTS+%11/TB[%12]")
                        .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
                        .arg(number(clip.duration)).arg(escapeFilterPath(textPath))
-                       .arg(clip.fontFamily).arg(clip.textColor).arg(scaledFontSize)
-                       .arg(number(clip.opacity / 100.0))
-                       .arg(angle).arg(number(clip.start)).arg(titleSource);
-        filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
+                       .arg(clip.fontFamily).arg(clip.textColor).arg(fontSizeExpression)
+                       .arg(titleOpacityExpression).arg(angle).arg(number(clip.start))
+                       .arg(titleSource).arg(rotateDimensions);
+        filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+(%3)':y='(H-h)/2+(%4)':"
                                  "eof_action=pass:shortest=0:repeatlast=0:enable='between(t,%5,%6)'[%7]")
-                       .arg(currentVideo, titleSource, number(clip.x), number(clip.y),
+                       .arg(currentVideo, titleSource, offsetXExpression, offsetYExpression,
                             number(clip.start), number(clip.start + clip.duration), label);
         currentVideo = label;
         ++titleSerial;
