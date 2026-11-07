@@ -383,6 +383,9 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                   keyframeExpression(clip.keyframes, QStringLiteral("rotation"), clip.rotation,
                                      QStringLiteral("t"))))
             : number(clip.rotation * 3.14159265358979323846 / 180.0);
+        const QString rotateDimensions = animatedRotation
+            ? QStringLiteral("ow=hypot(iw,ih):oh=ow")
+            : QStringLiteral("ow=rotw(iw):oh=roth(ih)");
         QString zoomFilter;
         if (clip.reverse)
             zoomFilter = QStringLiteral("reverse,");
@@ -422,7 +425,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         if (animatedOpacity) {
             const QString opacityExpression = escapeFilterExpression(keyframeExpression(
                 clip.keyframes, QStringLiteral("opacity"), clip.opacity, QStringLiteral("t")));
-            transitionFilter += QStringLiteral("lut=a='val*((%1)/100)':eval=frame,")
+            transitionFilter += QStringLiteral("geq=a='alpha(X,Y)*((%1)/100)',")
                                     .arg(opacityExpression);
         }
 
@@ -430,7 +433,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
                                  "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                                 "rotate='%7':ow=rotw(iw):oh=roth(ih):c=black@0,setsar=1,"
+                                 "rotate='%7':%14:c=black@0,setsar=1,"
                                  "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,%12%13"
                                  "colorchannelmixer=aa=%8,setpts=PTS-STARTPTS+%10/TB[%11]")
                        .arg(clip.inputIndex)
@@ -440,7 +443,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                        .arg(scaledWidth).arg(scaledHeight).arg(angle)
                        .arg(number(animatedOpacity ? 1.0 : clip.opacity / 100.0))
                        .arg(number(clip.duration)).arg(number(clip.start)).arg(label)
-                       .arg(zoomFilter).arg(transitionFilter);
+                       .arg(zoomFilter).arg(transitionFilter).arg(rotateDimensions);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
         const QString offsetXExpression = animatedX
