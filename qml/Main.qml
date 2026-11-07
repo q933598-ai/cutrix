@@ -804,9 +804,11 @@ ApplicationWindow {
         if (kind === "text") return ["x", "y", "scale", "rotation", "opacity"]
         if (kind === "image") return ["x", "y", "scale", "rotation", "opacity"]
         if (kind === "video") {
+            var track = Number(item.track)
+            if (track === 2 || track === 3)
+                return item.hasAudio === false ? [] : ["volume"]
             var keys = ["x", "y", "scale", "rotation", "opacity"]
-            if (Number(item.track) >= 0 && Number(item.track) <= 3 && item.hasAudio !== false)
-                keys.push("volume")
+            if (item.hasAudio !== false) keys.push("volume")
             return keys
         }
         return []
@@ -904,8 +906,10 @@ ApplicationWindow {
         var baseRotation = keyframeBaseValue(clip, "rotation")
         var baseOpacity = keyframeBaseValue(clip, "opacity")
         var baseVolume = keyframeBaseValue(clip, "volume")
+        var appliedKey = ""
         function setTrack(key, first, last, easing) {
             if (keys.indexOf(key) < 0) return false
+            appliedKey = key
             tracks[key] = [
                 { time: 0, value: first, easing: easing || "easeOut" },
                 { time: endTime, value: last, easing: "linear" }
@@ -941,6 +945,7 @@ ApplicationWindow {
             return
         }
         recordTimelineHistory("Применить анимацию")
+        animationGraphProperty = appliedKey
         mediaFiles = mediaFiles.map(function(item) {
             return String(item.clipId || "") === String(clip.clipId || "")
                 ? Object.assign({}, item, { keyframes: tracks }) : item
@@ -4369,6 +4374,13 @@ ApplicationWindow {
                 id: animationScroll
                 anchors.fill: parent
                 visible: root.activeSidebarSection === "Анимация"
+                onVisibleChanged: {
+                    if (visible) {
+                        var keys = root.animationPropertyKeys(root.selectedTimelineClip)
+                        if (keys.indexOf(root.animationGraphProperty) < 0)
+                            root.animationGraphProperty = keys.length ? keys[0] : "scale"
+                    }
+                }
                 clip: true
                 contentWidth: availableWidth
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
