@@ -839,6 +839,15 @@ ApplicationWindow {
                 { label: "♫ Fade In", preset: "fade-in" },
                 { label: "♫ Fade Out", preset: "fade-out" }
             ]
+        if (item.kind === "text")
+            return [
+                { label: "↓ Снизу вверх", preset: "text-from-bottom" },
+                { label: "← Слева", preset: "text-from-left" },
+                { label: "→ Справа", preset: "text-from-right" },
+                { label: "◉ Плавное появление", preset: "fade-in" },
+                { label: "✦ Pop", preset: "pop" },
+                { label: "◌ Исчезновение", preset: "fade-out" }
+            ]
         if (item.kind === "effect")
             return [
                 { label: "FX Blur In", preset: "fade-in" },
@@ -863,6 +872,7 @@ ApplicationWindow {
         return presets
     }
 
+
     function animationPropertyRange(key) {
         if (key === "scale") return { min: 10, max: 300 }
         if (key === "rotation") return { min: -360, max: 360 }
@@ -882,32 +892,45 @@ ApplicationWindow {
     function timelineClipKeyframeMarkers(item) {
         var markers = []
         if (!item) return markers
+        function addMarker(time, key, legacy) {
+            var markerTime = Math.max(0, Number(time) || 0)
+            for (var markerIndex = 0; markerIndex < markers.length; ++markerIndex) {
+                if (Math.abs(markers[markerIndex].time - markerTime) < 0.002) {
+                    if (markers[markerIndex].keys.indexOf(key) < 0)
+                        markers[markerIndex].keys.push(key)
+                    markers[markerIndex].legacy = markers[markerIndex].legacy || !!legacy
+                    return
+                }
+            }
+            markers.push({ time: markerTime, key: key, keys: [key], legacy: !!legacy })
+        }
         if (item.keyframes) {
             var keys = Object.keys(item.keyframes)
             for (var i = 0; i < keys.length; ++i) {
                 var frames = timelineKeyframesFor(item, keys[i])
                 for (var j = 0; j < frames.length; ++j)
-                    markers.push({ time: frames[j].time, key: keys[i] })
+                    addMarker(frames[j].time, keys[i], false)
             }
         }
         var duration = timelineClipDuration(item)
         if (item.zoomMode === "in" || item.zoomMode === "out") {
-            markers.push({ time: 0, key: "scale", legacy: true })
-            markers.push({ time: duration, key: "scale", legacy: true })
+            addMarker(0, "scale", true)
+            addMarker(duration, "scale", true)
         }
         var fadeIn = Math.max(0, Number(item.transitionIn || 0))
         var fadeOut = Math.max(0, Number(item.transitionOut || 0))
         if (fadeIn > 0.001) {
-            markers.push({ time: 0, key: "opacity", legacy: true })
-            markers.push({ time: Math.min(duration, fadeIn), key: "opacity", legacy: true })
+            addMarker(0, "opacity", true)
+            addMarker(Math.min(duration, fadeIn), "opacity", true)
         }
         if (fadeOut > 0.001) {
-            markers.push({ time: Math.max(0, duration - fadeOut), key: "opacity", legacy: true })
-            markers.push({ time: duration, key: "opacity", legacy: true })
+            addMarker(Math.max(0, duration - fadeOut), "opacity", true)
+            addMarker(duration, "opacity", true)
         }
         markers.sort(function(a, b) { return a.time - b.time })
         return markers
     }
+
 
     function timelineClipHasAnimation(item) {
         return timelineClipKeyframeMarkers(item).length > 0
@@ -960,7 +983,19 @@ ApplicationWindow {
             return true
         }
         var applied = false
-        if (preset === "fade-in") {
+        if (preset === "text-from-bottom" && clip.kind === "text") {
+            applied = setTrack("y", baseY + projectFrameHeight() * 0.24, baseY, "easeOut")
+                && setTrack("opacity", 0, baseOpacity, "easeOut")
+            appliedKey = "y"
+        } else if (preset === "text-from-left" && clip.kind === "text") {
+            applied = setTrack("x", baseX - projectFrameWidth() * 0.24, baseX, "easeOut")
+                && setTrack("opacity", 0, baseOpacity, "easeOut")
+            appliedKey = "x"
+        } else if (preset === "text-from-right" && clip.kind === "text") {
+            applied = setTrack("x", baseX + projectFrameWidth() * 0.24, baseX, "easeOut")
+                && setTrack("opacity", 0, baseOpacity, "easeOut")
+            appliedKey = "x"
+        } else if (preset === "fade-in") {
             var fadeKey = clip.kind === "audio" || Number(clip.track) === 2 || Number(clip.track) === 3
                 ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
             var fadeBase = fadeKey === "volume" ? baseVolume : fadeKey === "blur"
@@ -6065,6 +6100,8 @@ ApplicationWindow {
                                             property real dragStartClipX: 0
                                             property real dragStartClipY: 2
                                             property bool draggingClip: false
+                                             readonly property bool clipSelected:
+                                                 String(modelData.clipId || "") === String(root.selectedTimelineClipId || "")
 
                                             property string resizingEdge: ""
                                             property real resizeAnchorX: 0
@@ -6136,7 +6173,8 @@ ApplicationWindow {
                                             color: modelData.kind === "effect" ? theme.accent
                                                 : modelData.kind === "text" ? "#a36ac7"
                                                 : modelData.kind === "audio" ? "#226d6c" : "#315b9b"
-                                            border.color: theme.accent
+                                            border.color: timelineClip.clipSelected ? theme.text : theme.accent
+                                             border.width: timelineClip.clipSelected ? 2 : 1
                                             Row {
                                                 anchors.fill: parent
                                                 clip: true
@@ -6195,23 +6233,53 @@ ApplicationWindow {
                                                     font.bold: true
                                                 }
                                             }
-                                            Repeater {
-                                                model: root.timelineClipKeyframeMarkers(modelData)
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    width: 6
-                                                    height: 6
-                                                    y: timelineClip.height - height - 2
-                                                    x: Math.max(1, Math.min(timelineClip.width - width - 1,
-                                                        modelData.time / Math.max(0.001, root.timelineClipDuration(timelineClip.modelData))
-                                                            * timelineClip.width - width / 2))
-                                                    rotation: 45
-                                                    color: theme.accent
-                                                    border.color: theme.background
-                                                    border.width: 1
-                                                    z: 14
-                                                }
-                                            }
+                                             Rectangle {
+                                                 visible: timelineClip.clipSelected
+                                                     && root.timelineClipHasAnimation(modelData)
+                                                 x: 5
+                                                 width: Math.max(0, parent.width - 10)
+                                                 y: Math.round(parent.height / 2)
+                                                 height: 1
+                                                 color: theme.text
+                                                 opacity: 0.35
+                                                 z: 12
+                                             }
+                                             Repeater {
+                                                 model: root.timelineClipKeyframeMarkers(modelData)
+                                                 delegate: Rectangle {
+                                                     id: clipKeyframeMarker
+                                                     required property var modelData
+                                                     readonly property bool isForSelectedClip: timelineClip.clipSelected
+                                                     width: isForSelectedClip ? 10 : 6
+                                                     height: width
+                                                     y: isForSelectedClip
+                                                         ? Math.round((timelineClip.height - height) / 2)
+                                                         : timelineClip.height - height - 2
+                                                     x: Math.max(1, Math.min(timelineClip.width - width - 1,
+                                                         modelData.time / Math.max(0.001, root.timelineClipDuration(timelineClip.modelData))
+                                                             * timelineClip.width - width / 2))
+                                                     rotation: 45
+                                                     color: isForSelectedClip ? theme.text : theme.accent
+                                                     border.color: theme.background
+                                                     border.width: isForSelectedClip ? 2 : 1
+                                                     opacity: isForSelectedClip ? 1 : 0.35
+                                                     z: isForSelectedClip ? 18 : 14
+                                                     MouseArea {
+                                                         anchors.fill: parent
+                                                         anchors.margins: -3
+                                                         acceptedButtons: Qt.LeftButton
+                                                         cursorShape: Qt.PointingHandCursor
+                                                         onClicked: {
+                                                             var markerTime = Number(clipKeyframeMarker.modelData.time || 0)
+                                                             root.timelinePosition = Math.max(0,
+                                                                 Number(timelineClip.modelData.start || 0) + markerTime)
+                                                             root.updateTimelinePreview(root.timelinePosition)
+                                                             root.statusMessage = "Ключевой кадр · "
+                                                                 + markerTime.toFixed(2) + " с"
+                                                         }
+                                                     }
+                                                 }
+                                             }
                                             z: draggingClip ? 10 : 1
                                             MouseArea {
                                                 anchors.fill: parent
