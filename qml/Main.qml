@@ -164,6 +164,7 @@ ApplicationWindow {
     // Temporary transform values update the preview every frame and are saved
     // to the project only when the user releases a transform handle.
     property var transformPreviewOverride: ({})
+    property string animationGraphProperty: "scale"
     property var transformGesture: null
 
     function timelineWorkspaceForDuration(seconds) {
@@ -681,7 +682,8 @@ ApplicationWindow {
     function timelineVisualOpacity(item, seconds) {
         if (!item) return 1
         var base = Math.max(0, Math.min(100,
-            root.timelineClipProperty(item, "opacity", 100))) / 100
+            root.timelineAnimatedValue(item, "opacity", seconds,
+                root.timelineClipProperty(item, "opacity", 100)))) / 100
         var duration = Math.max(0.001, root.timelineClipDuration(item))
         var localTime = Number(seconds) - Number(item.start || 0)
         var fadeIn = Math.max(0, Math.min(duration,
@@ -740,6 +742,155 @@ ApplicationWindow {
         return isFinite(value) ? value : fallback
     }
 
+    function timelineKeyframesFor(item, key) {
+        if (!item || !item.keyframes || !item.keyframes[key]) return []
+        var source = item.keyframes[key]
+        var frames = []
+        for (var i = 0; i < source.length; ++i) {
+            var frame = source[i]
+            var time = Number(frame.time)
+            var value = Number(frame.value)
+            if (!isFinite(time) || !isFinite(value)) continue
+            frames.push({
+                time: Math.max(0, time),
+                value: value,
+                easing: String(frame.easing || "linear")
+            })
+        }
+        frames.sort(function(a, b) { return a.time - b.time })
+        return frames
+    }
+
+    function timelineAnimatedValue(item, key, seconds, fallback) {
+        if (!item) return fallback
+        if (String(item.clipId || "") === String(selectedTimelineClipId || "")
+                && transformPreviewOverride && transformPreviewOverride[key] !== undefined) {
+            var overrideValue = Number(transformPreviewOverride[key])
+            if (isFinite(overrideValue)) return overrideValue
+        }
+        var baseValue = timelineClipProperty(item, key, fallback)
+        var frames = timelineKeyframesFor(item, key)
+        if (frames.length === 0) return baseValue
+        var localTime = Number(seconds) - Number(item.start || 0)
+        if (!isFinite(localTime)) localTime = 0
+        if (localTime <= frames[0].time) return frames[0].value
+        if (localTime >= frames[frames.length - 1].time) return frames[frames.length - 1].value
+        for (var i = 0; i < frames.length - 1; ++i) {
+            var left = frames[i]
+            var right = frames[i + 1]
+            if (localTime < left.time || localTime > right.time) continue
+            var span = Math.max(0.000001, right.time - left.time)
+            var progress = Math.max(0, Math.min(1, (localTime - left.time) / span))
+            if (left.easing === "easeIn") progress = progress * progress
+            else if (left.easing === "easeOut") progress = 1 - (1 - progress) * (1 - progress)
+            else if (left.easing === "easeInOut")
+                progress = progress < 0.5 ? 2 * progress * progress
+                    : 1 - 2 * (1 - progress) * (1 - progress)
+            return left.value + (right.value - left.value) * progress
+        }
+        return baseValue
+    }
+
+    function animationPropertyRange(key) {
+        if (key === "scale") return { min: 10, max: 300 }
+        if (key === "rotation") return { min: -360, max: 360 }
+        if (key === "opacity") return { min: 0, max: 100 }
+        return { min: -1000, max: 1000 }
+    }
+
+    function keyframeBaseValue(item, key) {
+        var fallback = key === "scale" ? 100 : key === "opacity" ? 100 : 0
+        return timelineClipProperty(item, key, fallback)
+    }
+
+    function keyframeLocalTime(item) {
+        if (!item) return 0
+        return Math.max(0, Math.min(timelineClipDuration(item),
+            Number(timelinePosition) - Number(item.start || 0)))
+    }
+
+    function keyframeIndexAtPlayhead(item, key) {
+        var frames = timelineKeyframesFor(item, key)
+        var localTime = keyframeLocalTime(item)
+        var tolerance = Math.max(0.025, 0.5 / Math.max(1, currentProjectFps))
+        for (var i = 0; i < frames.length; ++i)
+            if (Math.abs(frames[i].time - localTime) <= tolerance) return i
+        return -1
+    }
+
+    function hasKeyframeAtPlayhead(item, key) {
+        return keyframeIndexAtPlayhead(item, key) >= 0
+    }
+
+    function toggleSelectedKeyframe(key) {
+        if (!selectedTimelineClip || !selectedClipCanZoom) {
+            statusMessage = "Выбери видео или изображение на V1/V2"
+            return
+        }
+        var clip = selectedTimelineClip
+        var frames = timelineKeyframesFor(clip, key)
+        var index = keyframeIndexAtPlayhead(clip, key)
+        if (index >= 0) {
+            frames.splice(index, 1)
+        } else {
+            frames.push({
+                time: keyframeLocalTime(clip),
+                value: timelineAnimatedValue(clip, key, timelinePosition, keyframeBaseValue(clip, key)),
+                easing: "linear"
+            })
+            frames.sort(function(a, b) { return a.time - b.time })
+        }
+        var tracks = Object.assign({}, clip.keyframes || ({}))
+        tracks[key] = frames
+        setSelectedClipProperties({ keyframes: tracks },
+            index >= 0 ? "Удалить ключевой кадр · " + key : "Добавить ключевой кадр · " + key)
+    }
+
+    function keyframeEasingAtPlayhead(item, key) {
+        var frames = timelineKeyframesFor(item, key)
+        if (!frames.length) return "linear"
+        var localTime = keyframeLocalTime(item)
+        var selected = frames[0]
+        for (var i = 0; i < frames.length; ++i) {
+            if (frames[i].time <= localTime + 0.0001) selected = frames[i]
+            else break
+        }
+        return selected.easing
+    }
+
+    function setSelectedKeyframeEasing(key, easing) {
+        if (!selectedTimelineClip) return
+        var frames = timelineKeyframesFor(selectedTimelineClip, key)
+        if (!frames.length) return
+        var localTime = keyframeLocalTime(selectedTimelineClip)
+        var selectedIndex = 0
+        for (var i = 0; i < frames.length; ++i) {
+            if (frames[i].time <= localTime + 0.0001) selectedIndex = i
+            else break
+        }
+        frames[selectedIndex].easing = easing
+        var tracks = Object.assign({}, selectedTimelineClip.keyframes || ({}))
+        tracks[key] = frames
+        setSelectedClipProperties({ keyframes: tracks }, "Сглаживание ключевого кадра")
+    }
+
+    function seekAdjacentKeyframe(direction) {
+        if (!selectedTimelineClip) return
+        var frames = timelineKeyframesFor(selectedTimelineClip, animationGraphProperty)
+        var localTime = keyframeLocalTime(selectedTimelineClip)
+        var target = -1
+        if (direction < 0) {
+            for (var i = frames.length - 1; i >= 0; --i)
+                if (frames[i].time < localTime - 0.025) { target = frames[i].time; break }
+        } else {
+            for (var j = 0; j < frames.length; ++j)
+                if (frames[j].time > localTime + 0.025) { target = frames[j].time; break }
+        }
+        if (target < 0) return
+        timelinePosition = Number(selectedTimelineClip.start || 0) + target
+        updateTimelinePreview(timelinePosition)
+    }
+
     // The original blur slider stays attached to a media clip. Separate FX
     // clips are rendered as a masked, transformable region over the preview.
     function timelineBlurAt(item, seconds) {
@@ -773,7 +924,8 @@ ApplicationWindow {
     // Animated zoom is evaluated against the clip's local timeline time.
     // Legacy projects without zoomMode keep their original static scale.
     function timelineClipScaleAt(item, seconds) {
-        var baseScale = timelineClipProperty(item, "scale", 100)
+        var baseScale = timelineAnimatedValue(item, "scale", seconds,
+            timelineClipProperty(item, "scale", 100))
         if (!item) return baseScale
         var mode = String(item.zoomMode || "none")
         if (mode !== "in" && mode !== "out") return baseScale
@@ -815,11 +967,13 @@ ApplicationWindow {
     }
 
     function timelinePreviewOffsetX(item, previewWidth) {
-        return timelineClipProperty(item, "x", 0) * previewWidth / projectFrameWidth()
+        return timelineAnimatedValue(item, "x", timelinePosition,
+            timelineClipProperty(item, "x", 0)) * previewWidth / projectFrameWidth()
     }
 
     function timelinePreviewOffsetY(item, previewHeight) {
-        return timelineClipProperty(item, "y", 0) * previewHeight / projectFrameHeight()
+        return timelineAnimatedValue(item, "y", timelinePosition,
+            timelineClipProperty(item, "y", 0)) * previewHeight / projectFrameHeight()
     }
 
     // Use the actually painted media rectangle rather than the whole project
@@ -949,7 +1103,7 @@ ApplicationWindow {
         var centerY = previewCanvas.height / 2 + timelinePreviewOffsetY(item, previewCanvas.height)
         var dx = sceneX - centerX
         var dy = sceneY - centerY
-        var radians = -timelineClipProperty(item, "rotation", 0) * Math.PI / 180
+        var radians = -timelineAnimatedValue(item, "rotation", timelinePosition, timelineClipProperty(item, "rotation", 0)) * Math.PI / 180
         var localX = (dx * Math.cos(radians) - dy * Math.sin(radians)) / scale
         var localY = (dx * Math.sin(radians) + dy * Math.cos(radians)) / scale
         return Math.abs(localX) <= baseWidth / 2 && Math.abs(localY) <= baseHeight / 2
@@ -4165,8 +4319,8 @@ ApplicationWindow {
                                     origin.y: timelineUnderlayVideoOutput.height / 2
                                 },
                                 Rotation {
-                                    angle: root.timelineClipProperty(
-                                        root.timelineUnderlayVideoAt(root.timelinePosition), "rotation", 0)
+                                    angle: root.timelineAnimatedValue(root.timelineUnderlayVideoAt(root.timelinePosition), "rotation", root.timelinePosition,
+                                        root.timelineClipProperty(root.timelineUnderlayVideoAt(root.timelinePosition), "rotation", 0))
                                     origin.x: timelineUnderlayVideoOutput.width / 2
                                     origin.y: timelineUnderlayVideoOutput.height / 2
                                 },
@@ -4223,7 +4377,8 @@ ApplicationWindow {
                                     origin.y: videoOutput.height / 2
                                 },
                                 Rotation {
-                                    angle: root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "rotation", 0)
+                                    angle: root.timelineAnimatedValue(root.timelineFootageAt(root.timelinePosition), "rotation", root.timelinePosition,
+                                        root.timelineClipProperty(root.timelineFootageAt(root.timelinePosition), "rotation", 0))
                                     origin.x: videoOutput.width / 2
                                     origin.y: videoOutput.height / 2
                                 },
@@ -4295,7 +4450,8 @@ ApplicationWindow {
                                     origin.y: timelineVideoStillPreview.height / 2
                                 },
                                 Rotation {
-                                    angle: root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0)
+                                    angle: root.timelineAnimatedValue(root.timelineVideoAt(root.timelinePosition), "rotation", root.timelinePosition,
+                                        root.timelineClipProperty(root.timelineVideoAt(root.timelinePosition), "rotation", 0))
                                     origin.x: timelineVideoStillPreview.width / 2
                                     origin.y: timelineVideoStillPreview.height / 2
                                 },
@@ -4392,7 +4548,8 @@ ApplicationWindow {
                                         ? root.timelinePreviewOffsetY(timelineBlurPreviewMaskShape.effectClip, parent.height) : 0)
                                     - height / 2
                                 rotation: timelineBlurPreviewMaskShape.effectClip
-                                    ? root.timelineClipProperty(timelineBlurPreviewMaskShape.effectClip, "rotation", 0) : 0
+                                    ? root.timelineAnimatedValue(timelineBlurPreviewMaskShape.effectClip, "rotation", root.timelinePosition,
+                                        root.timelineClipProperty(timelineBlurPreviewMaskShape.effectClip, "rotation", 0)) : 0
                                 color: "white"
                                 antialiasing: false
                             }
@@ -4439,7 +4596,8 @@ ApplicationWindow {
                                     origin.y: timelineTextOverlay.height / 2
                                 },
                                 Rotation {
-                                    angle: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "rotation", 0)
+                                    angle: root.timelineAnimatedValue(root.timelineTextAt(root.timelinePosition), "rotation", root.timelinePosition,
+                                        root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "rotation", 0))
                                     origin.x: timelineTextOverlay.width / 2
                                     origin.y: timelineTextOverlay.height / 2
                                 },
@@ -4494,7 +4652,8 @@ ApplicationWindow {
                                 y: previewCanvas.height / 2
                                     + root.timelinePreviewOffsetY(transformOverlay.targetClip, previewCanvas.height)
                                     - height / 2
-                                rotation: root.timelineClipProperty(transformOverlay.targetClip, "rotation", 0)
+                                rotation: root.timelineAnimatedValue(transformOverlay.targetClip, "rotation", root.timelinePosition,
+                                    root.timelineClipProperty(transformOverlay.targetClip, "rotation", 0))
                                 transformOrigin: Item.Center
 
                                 Rectangle {
