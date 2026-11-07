@@ -4115,6 +4115,170 @@ ApplicationWindow {
                         }
                         Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                         Text {
+                            text: "KEYFRAMES · КЛЮЧЕВЫЕ КАДРЫ"
+                            color: theme.accent
+                            font.family: "monospace"
+                            font.bold: true
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.selectedClipCanZoom
+                                ? "Выбери параметр, поставь курсор времени и добавь ключевой кадр. Между кадрами значение будет плавно меняться."
+                                : "Для работы с ключевыми кадрами выбери видео или изображение на V1/V2."
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 9 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ComboBox {
+                                id: keyframePropertyBox
+                                Layout.fillWidth: true
+                                model: ["Позиция X", "Позиция Y", "Масштаб", "Поворот", "Прозрачность"]
+                                currentIndex: root.animationGraphProperty === "x" ? 0
+                                    : root.animationGraphProperty === "y" ? 1
+                                    : root.animationGraphProperty === "rotation" ? 3
+                                    : root.animationGraphProperty === "opacity" ? 4 : 2
+                                onActivated: function(index) {
+                                    root.animationGraphProperty = ["x", "y", "scale", "rotation", "opacity"][index]
+                                    keyframeCurveCanvas.requestPaint()
+                                }
+                            }
+                            Button {
+                                text: root.hasKeyframeAtPlayhead(root.selectedTimelineClip, root.animationGraphProperty)
+                                    ? "◆ Удалить" : "◇ Добавить"
+                                enabled: root.selectedClipCanZoom
+                                onClicked: root.toggleSelectedKeyframe(root.animationGraphProperty)
+                                palette.buttonText: theme.text
+                                background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
+                            }
+                        }
+                        Canvas {
+                            id: keyframeCurveCanvas
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 104
+                            antialiasing: true
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                ctx.fillStyle = theme.background
+                                ctx.fillRect(0, 0, width, height)
+                                var clip = root.selectedTimelineClip
+                                if (!clip || width <= 0 || height <= 0) return
+                                var duration = Math.max(0.001, root.timelineClipDuration(clip))
+                                var key = root.animationGraphProperty
+                                var frames = root.timelineKeyframesFor(clip, key)
+                                var range = root.animationPropertyRange(key)
+                                function valueY(value) {
+                                    var normalized = Math.max(0, Math.min(1, (value - range.min) / (range.max - range.min)))
+                                    return height - normalized * (height - 12) - 6
+                                }
+                                ctx.strokeStyle = theme.border
+                                ctx.lineWidth = 1
+                                for (var grid = 1; grid < 4; ++grid) {
+                                    var gy = grid * height / 4
+                                    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(width, gy); ctx.stroke()
+                                }
+                                ctx.beginPath()
+                                var steps = Math.max(30, Math.floor(width / 2))
+                                for (var step = 0; step <= steps; ++step) {
+                                    var local = duration * step / steps
+                                    var value = root.timelineAnimatedValue(clip, key, Number(clip.start || 0) + local,
+                                        root.keyframeBaseValue(clip, key))
+                                    var px = width * step / steps
+                                    var py = valueY(value)
+                                    if (step === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
+                                }
+                                ctx.strokeStyle = theme.accent
+                                ctx.lineWidth = 2
+                                ctx.stroke()
+                                ctx.fillStyle = theme.text
+                                for (var i = 0; i < frames.length; ++i) {
+                                    var kx = width * frames[i].time / duration
+                                    var ky = valueY(frames[i].value)
+                                    ctx.save(); ctx.translate(kx, ky); ctx.rotate(Math.PI / 4)
+                                    ctx.fillRect(-4, -4, 8, 8); ctx.restore()
+                                }
+                                var playheadLocal = root.keyframeLocalTime(clip)
+                                var playheadX = width * playheadLocal / duration
+                                ctx.beginPath(); ctx.moveTo(playheadX, 0); ctx.lineTo(playheadX, height)
+                                ctx.strokeStyle = theme.muted; ctx.lineWidth = 1; ctx.stroke()
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: root.selectedClipCanZoom
+                                onClicked: function(mouse) {
+                                    var clip = root.selectedTimelineClip
+                                    var duration = Math.max(0.001, root.timelineClipDuration(clip))
+                                    root.timelinePosition = Number(clip.start || 0)
+                                        + duration * Math.max(0, Math.min(1, mouse.x / width))
+                                    root.updateTimelinePreview(root.timelinePosition)
+                                }
+                            }
+                        }
+                        Connections {
+                            target: root
+                            function onTimelinePositionChanged() { keyframeCurveCanvas.requestPaint() }
+                            function onMediaFilesChanged() { keyframeCurveCanvas.requestPaint() }
+                            function onAnimationGraphPropertyChanged() { keyframeCurveCanvas.requestPaint() }
+                            function onSelectedTimelineClipIdChanged() { keyframeCurveCanvas.requestPaint() }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Button {
+                                text: "◀"
+                                enabled: root.selectedClipCanZoom
+                                onClicked: root.seekAdjacentKeyframe(-1)
+                                palette.buttonText: theme.text
+                                background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Локальное время: " + root.keyframeLocalTime(root.selectedTimelineClip).toFixed(2) + " с"
+                                color: theme.accent
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                            Button {
+                                text: "▶"
+                                enabled: root.selectedClipCanZoom
+                                onClicked: root.seekAdjacentKeyframe(1)
+                                palette.buttonText: theme.text
+                                background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Easing"; color: theme.muted; font.family: "monospace"; font.pixelSize: 9 }
+                            ComboBox {
+                                id: keyframeEasingBox
+                                Layout.fillWidth: true
+                                model: ["Linear", "Ease In", "Ease Out", "Ease In Out"]
+                                currentIndex: {
+                                    var easing = root.keyframeEasingAtPlayhead(root.selectedTimelineClip, root.animationGraphProperty)
+                                    return easing === "easeIn" ? 1 : easing === "easeOut" ? 2 : easing === "easeInOut" ? 3 : 0
+                                }
+                                enabled: root.selectedClipCanZoom
+                                onActivated: function(index) {
+                                    root.setSelectedKeyframeEasing(root.animationGraphProperty,
+                                        ["linear", "easeIn", "easeOut", "easeInOut"][index])
+                                }
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "◆ " + root.timelineKeyframesFor(root.selectedTimelineClip, root.animationGraphProperty).length
+                                + " ключевых кадров · щёлкни по графику, чтобы переместить курсор."
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 9 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        Text {
                             text: "БЫСТРЫЕ ПРЕСЕТЫ"
                             color: theme.muted
                             font.family: "monospace"
