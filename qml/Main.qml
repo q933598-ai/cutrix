@@ -5511,6 +5511,29 @@ ApplicationWindow {
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Text { text: "ПОЗИЦИЯ · МАСШТАБ · ПОВОРОТ"; color: theme.muted; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
                     Text { text: root.selectedTimelineClip ? root.selectedTimelineClip.name : "Выбери клип на таймлайне"; color: theme.text; font.family: "monospace"; font.pixelSize: 11; wrapMode: Text.WordWrap }
+                    Button {
+                        visible: !!root.selectedTimelineClip
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 36
+                        text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
+                            ? "✦ АНИМАЦИЯ ТЕКСТА" : "✦ АНИМАЦИЯ КЛИПА"
+                        enabled: root.selectedClipCanAnimate
+                        onClicked: {
+                            root.activeSidebarSection = "Анимация"
+                            root.statusMessage = root.selectedTimelineClip.kind === "text"
+                                ? "Выбери появление текста · снизу, слева или справа"
+                                : "Настройки анимации выбранного клипа"
+                        }
+                        font.family: "monospace"
+                        font.pixelSize: 10
+                        palette.buttonText: theme.accent
+                        background: Rectangle {
+                            color: theme.panelAlt
+                            border.color: theme.accent
+                            border.width: 1
+                            radius: 0
+                        }
+                    }
                     GridLayout {
                         Layout.fillWidth: true
                         columns: 2
