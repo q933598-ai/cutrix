@@ -5534,6 +5534,40 @@ ApplicationWindow {
                             radius: 0
                         }
                     }
+                    Text {
+                        visible: !!root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
+                        Layout.fillWidth: true
+                        text: "БЫСТРОЕ ПОЯВЛЕНИЕ ТЕКСТА"
+                        color: theme.accent
+                        font.family: "monospace"
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+                    Repeater {
+                        model: [
+                            { label: "↓ ВЫПЛЫТЬ СНИЗУ", preset: "text-from-bottom" },
+                            { label: "← ВЪЕХАТЬ СЛЕВА", preset: "text-from-left" },
+                            { label: "→ ВЪЕХАТЬ СПРАВА", preset: "text-from-right" }
+                        ]
+                        delegate: Button {
+                            required property var modelData
+                            visible: !!root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            enabled: root.selectedClipCanAnimate
+                            text: modelData.label
+                            font.family: "monospace"
+                            font.pixelSize: 9
+                            onClicked: root.applyAnimationPreset(modelData.preset)
+                            palette.buttonText: theme.text
+                            background: Rectangle {
+                                color: theme.panelAlt
+                                border.color: theme.accent
+                                border.width: 1
+                                radius: 0
+                            }
+                        }
+                    }
                     GridLayout {
                         Layout.fillWidth: true
                         columns: 2
@@ -6694,6 +6728,11 @@ ApplicationWindow {
     onTimelinePositionChanged: {
         if (timelinePlaybackTimer.running)
             Qt.callLater(root.keepTimelinePlayheadVisible)
+    }
+
+    onSelectedTimelineClipIdChanged: {
+        if (selectedTimelineClip && selectedTimelineClip.kind === "text")
+            activeSidebarSection = "Анимация"
     }
 
     footer: Rectangle {
