@@ -112,7 +112,11 @@ QString keyframeExpression(const QVariantMap &tracks, const QString &property,
         return a.time < b.time;
     });
     if (points.isEmpty()) return expressionNumber(fallback);
-    if (points.size() == 1) return expressionNumber(points.front().value);
+    if (points.size() == 1) {
+        return QStringLiteral("if(lt(%1,%2),%3,%4)")
+            .arg(timeExpression, expressionNumber(points.front().time),
+                 expressionNumber(fallback), expressionNumber(points.front().value));
+    }
     QString result = expressionNumber(points.back().value);
     for (int i = points.size() - 2; i >= 0; --i) {
         const Point &left = points.at(i);
@@ -135,7 +139,7 @@ QString keyframeExpression(const QVariantMap &tracks, const QString &property,
     }
     return QStringLiteral("if(lt(%1,%2),%3,%4)")
         .arg(timeExpression, expressionNumber(points.front().time),
-             expressionNumber(points.front().value), result);
+             expressionNumber(fallback), result);
 }
 
 QString escapeFilterExpression(QString expression)
