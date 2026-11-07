@@ -2848,9 +2848,12 @@ ApplicationWindow {
                 rotation: 0, opacity: 100, volume: 100,
                 fontSize: 30, fontFamily: "Sans", textColor: "#ffffff"
             })
-            root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
             root.recordTimelineHistory("Добавить текстовый клип")
             root.mediaFiles = updated
+            // Publish the new item before selecting it so selection-driven UI
+            // (including the text animation panel) can resolve the clip.
+            root.selectedTimelineClipId = String(updated[updated.length - 1].clipId)
+            root.activeSidebarSection = "Анимация"
             root.saveTimelineMedia(updated)
             root.timelinePosition = start
             root.updateTimelinePreview(start)
