@@ -388,7 +388,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                      QStringLiteral("t"))))
             : number(clip.rotation * 3.14159265358979323846 / 180.0);
         const QString rotateDimensions = animatedRotation
-            ? QStringLiteral("ow=hypot(iw,ih):oh=ow")
+            ? QStringLiteral("ow=sqrt(iw*iw+ih*ih):oh=ow")
             : QStringLiteral("ow=rotw(iw):oh=roth(ih)");
         QString zoomFilter;
         if (clip.reverse)
@@ -608,7 +608,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                    QStringLiteral("t"))))
             : number(clip.rotation * 3.14159265358979323846 / 180.0);
         const QString rotateDimensions = animatedRotation
-            ? QStringLiteral("ow=hypot(iw,ih):oh=ow")
+            ? QStringLiteral("ow=sqrt(iw*iw+ih*ih):oh=ow")
             : QStringLiteral("ow=rotw(iw):oh=roth(ih)");
         const QString offsetXExpression = animatedX
             ? escapeFilterExpression(keyframeExpression(clip.keyframes, QStringLiteral("x"),
