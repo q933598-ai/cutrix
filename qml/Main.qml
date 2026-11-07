@@ -881,12 +881,29 @@ ApplicationWindow {
 
     function timelineClipKeyframeMarkers(item) {
         var markers = []
-        if (!item || !item.keyframes) return markers
-        var keys = Object.keys(item.keyframes)
-        for (var i = 0; i < keys.length; ++i) {
-            var frames = timelineKeyframesFor(item, keys[i])
-            for (var j = 0; j < frames.length; ++j)
-                markers.push({ time: frames[j].time, key: keys[i] })
+        if (!item) return markers
+        if (item.keyframes) {
+            var keys = Object.keys(item.keyframes)
+            for (var i = 0; i < keys.length; ++i) {
+                var frames = timelineKeyframesFor(item, keys[i])
+                for (var j = 0; j < frames.length; ++j)
+                    markers.push({ time: frames[j].time, key: keys[i] })
+            }
+        }
+        var duration = timelineClipDuration(item)
+        if (item.zoomMode === "in" || item.zoomMode === "out") {
+            markers.push({ time: 0, key: "scale", legacy: true })
+            markers.push({ time: duration, key: "scale", legacy: true })
+        }
+        var fadeIn = Math.max(0, Number(item.transitionIn || 0))
+        var fadeOut = Math.max(0, Number(item.transitionOut || 0))
+        if (fadeIn > 0.001) {
+            markers.push({ time: 0, key: "opacity", legacy: true })
+            markers.push({ time: Math.min(duration, fadeIn), key: "opacity", legacy: true })
+        }
+        if (fadeOut > 0.001) {
+            markers.push({ time: Math.max(0, duration - fadeOut), key: "opacity", legacy: true })
+            markers.push({ time: duration, key: "opacity", legacy: true })
         }
         markers.sort(function(a, b) { return a.time - b.time })
         return markers
@@ -894,6 +911,8 @@ ApplicationWindow {
 
     function timelineClipHasAnimation(item) {
         return timelineClipKeyframeMarkers(item).length > 0
+            || (item && (item.zoomMode === "in" || item.zoomMode === "out"
+                || Number(item.transitionIn || 0) > 0.001 || Number(item.transitionOut || 0) > 0.001))
     }
 
     function previewSelectedAnimation() {
@@ -987,7 +1006,12 @@ ApplicationWindow {
         recordTimelineHistory("Очистить анимацию")
         mediaFiles = mediaFiles.map(function(item) {
             if (String(item.clipId || "") !== clipId) return item
-            var updated = Object.assign({}, item)
+            var updated = Object.assign({}, item, {
+                zoomMode: "none",
+                zoomAmount: 150,
+                transitionIn: 0,
+                transitionOut: 0
+            })
             delete updated.keyframes
             return updated
         })
@@ -4443,7 +4467,7 @@ ApplicationWindow {
                     Text {
                         Layout.fillWidth: true
                         text: root.timelineClipHasAnimation(root.selectedTimelineClip)
-                            ? "◆ АНИМАЦИЯ ВКЛЮЧЕНА · " + root.timelineClipKeyframeMarkers(root.selectedTimelineClip).length + " ключевых кадров"
+                            ? "◆ АНИМАЦИЯ ВКЛЮЧЕНА · " + root.timelineClipKeyframeMarkers(root.selectedTimelineClip).length + " ключей / маркеров"
                             : "◇ Для этого клипа ещё нет анимации. Выбери пресет или добавь ключевые кадры вручную."
                         color: root.timelineClipHasAnimation(root.selectedTimelineClip) ? theme.accent : theme.muted
                         font.family: "monospace"
