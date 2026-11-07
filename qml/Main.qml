@@ -846,7 +846,7 @@ ApplicationWindow {
                 { label: "FX Slide Out", preset: "slide-out" },
                 { label: "FX Pop", preset: "pop" }
             ]
-        return [
+        var presets = [
             { label: "◉ Fade In", preset: "fade-in" },
             { label: "◌ Fade Out", preset: "fade-out" },
             { label: "↗ Zoom In", preset: "zoom-in" },
@@ -855,6 +855,11 @@ ApplicationWindow {
             { label: "✦ Pop", preset: "pop" },
             { label: "↻ Rotate", preset: "rotate" }
         ]
+        if (item.kind === "video" && item.hasAudio !== false) {
+            presets.push({ label: "♫ Audio Fade In", preset: "audio-fade-in" })
+            presets.push({ label: "♫ Audio Fade Out", preset: "audio-fade-out" })
+        }
+        return presets
     }
 
     function animationPropertyRange(key) {
@@ -927,6 +932,10 @@ ApplicationWindow {
             var fadeOutBase = fadeOutKey === "volume" ? baseVolume : fadeOutKey === "blur"
                 ? keyframeBaseValue(clip, "blur") : baseOpacity
             applied = setTrack(fadeOutKey, fadeOutBase, 0, "easeIn")
+        } else if (preset === "audio-fade-in") {
+            applied = setTrack("volume", 0, baseVolume, "easeOut")
+        } else if (preset === "audio-fade-out") {
+            applied = setTrack("volume", baseVolume, 0, "easeIn")
         } else if (preset === "zoom-in") {
             applied = setTrack("scale", Math.max(10, baseScale * 0.78), baseScale, "easeOut")
         } else if (preset === "zoom-out") {
