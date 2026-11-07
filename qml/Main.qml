@@ -123,6 +123,7 @@ ApplicationWindow {
     property string statusMessage: "Готово · Cutrix Project Hub"
     property int mediaPanelWidth: 255
     property real timelinePosition: 0
+    property real animationPreviewStopAt: -1
     // Timeline zoom is measured in screen pixels per second. The available
     // editing horizon starts at 20 minutes and doubles as clips move further out.
     property real timelineZoom: 4
@@ -941,6 +942,7 @@ ApplicationWindow {
     function previewSelectedAnimation() {
         if (timelinePlaybackTimer.running) {
             timelinePlaybackTimer.stop()
+            animationPreviewStopAt = -1
             mediaPlayer.pause()
             statusMessage = "Предпросмотр анимации остановлен"
             return
@@ -950,7 +952,9 @@ ApplicationWindow {
             statusMessage = "Сначала добавь анимацию выбранному клипу"
             return
         }
-        timelinePosition = Math.max(0, Number(selectedTimelineClip.start || 0))
+        var clipStart = Math.max(0, Number(selectedTimelineClip.start || 0))
+        timelinePosition = clipStart
+        animationPreviewStopAt = clipStart + timelineClipDuration(selectedTimelineClip)
         updateTimelinePreview(timelinePosition)
         timelinePlaybackTimer.start()
         statusMessage = "Предпросмотр анимации · " + String(selectedTimelineClip.name || selectedTimelineClip.kind)
@@ -1035,9 +1039,13 @@ ApplicationWindow {
                 ? Object.assign({}, item, { keyframes: tracks }) : item
         })
         saveTimelineMedia(mediaFiles)
+        timelinePlaybackTimer.stop()
+        mediaPlayer.pause()
         timelinePosition = Math.max(0, Number(clip.start || 0))
+        animationPreviewStopAt = timelinePosition + Math.min(duration, endTime + 0.8)
         updateTimelinePreview(timelinePosition)
-        statusMessage = "Анимация применена · " + preset + " · нажми «Предпросмотр»"
+        timelinePlaybackTimer.start()
+        statusMessage = "Анимация применена и запущена · " + preset
     }
 
     function clearSelectedAnimation() {
@@ -2491,6 +2499,15 @@ ApplicationWindow {
         interval: 33
         repeat: true
         onTriggered: {
+            if (root.animationPreviewStopAt >= 0
+                    && root.timelinePosition >= root.animationPreviewStopAt - 0.001) {
+                root.timelinePosition = Math.min(root.timelineDuration, root.animationPreviewStopAt)
+                root.animationPreviewStopAt = -1
+                stop()
+                mediaPlayer.pause()
+                root.updateTimelinePreview(root.timelinePosition)
+                return
+            }
             if (root.timelineDuration <= 0) {
                 stop()
                 mediaPlayer.pause()
