@@ -87,7 +87,7 @@ QString expressionNumber(double value)
 
 bool hasKeyframes(const QVariantMap &tracks, const QString &property)
 {
-    return tracks.value(property).toList().size() >= 2;
+    return !tracks.value(property).toList().isEmpty();
 }
 
 QString keyframeExpression(const QVariantMap &tracks, const QString &property,
