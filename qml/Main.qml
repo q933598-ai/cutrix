@@ -6252,9 +6252,7 @@ ApplicationWindow {
                                                      readonly property bool isForSelectedClip: timelineClip.clipSelected
                                                      width: isForSelectedClip ? 10 : 6
                                                      height: width
-                                                     y: isForSelectedClip
-                                                         ? Math.round((timelineClip.height - height) / 2)
-                                                         : timelineClip.height - height - 2
+                                                     y: timelineClip.height - height - 2
                                                      x: Math.max(1, Math.min(timelineClip.width - width - 1,
                                                          modelData.time / Math.max(0.001, root.timelineClipDuration(timelineClip.modelData))
                                                              * timelineClip.width - width / 2))
