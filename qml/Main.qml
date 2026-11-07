@@ -829,7 +829,7 @@ ApplicationWindow {
 
     function toggleSelectedKeyframe(key) {
         if (!selectedTimelineClip || !selectedClipCanAnimate) {
-            statusMessage = "Выбери видео или изображение на V1/V2"
+            statusMessage = "Выбери видео, изображение или текст на таймлайне"
             return
         }
         var clip = selectedTimelineClip
@@ -852,7 +852,7 @@ ApplicationWindow {
     }
 
     function setKeyframeValueAtPlayhead(key, value) {
-        if (!selectedTimelineClip || !selectedClipCanZoom) return
+        if (!selectedTimelineClip || !selectedClipCanAnimate) return
         var nextValue = Number(value)
         if (!isFinite(nextValue)) return
         var range = animationPropertyRange(key)
