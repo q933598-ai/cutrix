@@ -800,7 +800,7 @@ ApplicationWindow {
         if (!item) return []
         var kind = String(item.kind || "")
         if (kind === "audio") return ["volume"]
-        if (kind === "effect") return ["x", "y", "scale", "rotation"]
+        if (kind === "effect") return ["x", "y", "scale", "rotation", "blur"]
         if (kind === "text") return ["x", "y", "scale", "rotation", "opacity"]
         if (kind === "image") return ["x", "y", "scale", "rotation", "opacity"]
         if (kind === "video") {
@@ -838,6 +838,8 @@ ApplicationWindow {
             ]
         if (item.kind === "effect")
             return [
+                { label: "FX Blur In", preset: "fade-in" },
+                { label: "FX Blur Out", preset: "fade-out" },
                 { label: "FX Slide In", preset: "slide-in" },
                 { label: "FX Slide Out", preset: "slide-out" },
                 { label: "FX Pop", preset: "pop" }
@@ -912,11 +914,15 @@ ApplicationWindow {
         }
         var applied = false
         if (preset === "fade-in") {
-            applied = setTrack(keys.indexOf("volume") >= 0 ? "volume" : "opacity",
-                0, keys.indexOf("volume") >= 0 ? baseVolume : baseOpacity, "easeOut")
+            var fadeKey = clip.kind === "audio" ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
+            var fadeBase = fadeKey === "volume" ? baseVolume : fadeKey === "blur"
+                ? keyframeBaseValue(clip, "blur") : baseOpacity
+            applied = setTrack(fadeKey, 0, fadeBase, "easeOut")
         } else if (preset === "fade-out") {
-            applied = setTrack(keys.indexOf("volume") >= 0 ? "volume" : "opacity",
-                keys.indexOf("volume") >= 0 ? baseVolume : baseOpacity, 0, "easeIn")
+            var fadeOutKey = clip.kind === "audio" ? "volume" : clip.kind === "effect" ? "blur" : "opacity"
+            var fadeOutBase = fadeOutKey === "volume" ? baseVolume : fadeOutKey === "blur"
+                ? keyframeBaseValue(clip, "blur") : baseOpacity
+            applied = setTrack(fadeOutKey, fadeOutBase, 0, "easeIn")
         } else if (preset === "zoom-in") {
             applied = setTrack("scale", Math.max(10, baseScale * 0.78), baseScale, "easeOut")
         } else if (preset === "zoom-out") {
@@ -6078,14 +6084,51 @@ ApplicationWindow {
                                             Text {
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 5
-                                                text: modelData.kind === "text" ? "T · " + modelData.text
-                                                    : modelData.kind === "effect" ? "FX · Размытие · " + Math.round(Number(modelData.blur || 0)) + "%"
-                                                    : modelData.name
+                                                anchors.rightMargin: root.timelineClipHasAnimation(modelData) ? 36 : 3
+                                                text: (root.timelineClipHasAnimation(modelData) ? "◆ " : "")
+                                                    + (modelData.kind === "text" ? "T · " + modelData.text
+                                                        : modelData.kind === "effect" ? "FX · Размытие · " + Math.round(Number(modelData.blur || 0)) + "%"
+                                                        : modelData.name)
                                                 color: "#f0f2ff"
                                                 font.family: "monospace"
                                                 font.pixelSize: 10
                                                 verticalAlignment: Text.AlignVCenter
                                                 elide: Text.ElideRight
+                                            }
+                                            Rectangle {
+                                                visible: root.timelineClipHasAnimation(modelData)
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 2
+                                                width: 31
+                                                height: 13
+                                                color: theme.background
+                                                border.color: theme.accent
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "ANIM"
+                                                    color: theme.accent
+                                                    font.family: "monospace"
+                                                    font.pixelSize: 8
+                                                    font.bold: true
+                                                }
+                                            }
+                                            Repeater {
+                                                model: root.timelineClipKeyframeMarkers(modelData)
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    width: 6
+                                                    height: 6
+                                                    y: timelineClip.height - height - 2
+                                                    x: Math.max(1, Math.min(timelineClip.width - width - 1,
+                                                        modelData.time / Math.max(0.001, root.timelineClipDuration(timelineClip.modelData))
+                                                            * timelineClip.width - width / 2))
+                                                    rotation: 45
+                                                    color: theme.accent
+                                                    border.color: theme.background
+                                                    border.width: 1
+                                                    z: 14
+                                                }
                                             }
                                             z: draggingClip ? 10 : 1
                                             MouseArea {
