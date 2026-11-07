@@ -452,7 +452,7 @@ ApplicationWindow {
 
     function applyMotionPreset(preset) {
         if (!selectedClipCanTransition || !selectedClipCanZoom) {
-            statusMessage = "Выбери видео или изображение на V1/V2"
+            statusMessage = "Выбери видео, изображение или текст на таймлайне"
             return
         }
         var changes = {
@@ -4152,7 +4152,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             text: root.selectedClipCanAnimate
                                 ? "Выбери параметр, поставь курсор времени и добавь ключевой кадр. Между кадрами значение будет плавно меняться."
-                                : "Для работы с ключевыми кадрами выбери видео или изображение на V1/V2."
+                                : "Для работы с ключевыми кадрами выбери видео, изображение или текстовый клип."
                             color: theme.muted
                             font.family: "monospace"
                             font.pixelSize: 9 * root.uiFontScale / 100
