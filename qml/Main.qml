@@ -80,9 +80,8 @@ ApplicationWindow {
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
     readonly property bool selectedClipCanAnimate: !!selectedTimelineClip
-        && (selectedTimelineClip.kind === "text"
-            || ((selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
-                && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
+        && Number(selectedTimelineClip.track) >= 0
+        && ["video", "image", "text", "effect", "audio"].indexOf(String(selectedTimelineClip.kind || "")) >= 0
     readonly property bool selectedClipCanTransition: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
@@ -796,16 +795,167 @@ ApplicationWindow {
         return baseValue
     }
 
+    function animationPropertyKeys(item) {
+        if (!item) return []
+        var kind = String(item.kind || "")
+        if (kind === "audio") return ["volume"]
+        if (kind === "effect") return ["x", "y", "scale", "rotation"]
+        if (kind === "text") return ["x", "y", "scale", "rotation", "opacity"]
+        if (kind === "image") return ["x", "y", "scale", "rotation", "opacity"]
+        if (kind === "video") {
+            var keys = ["x", "y", "scale", "rotation", "opacity"]
+            if (Number(item.track) >= 0 && Number(item.track) <= 3 && item.hasAudio !== false)
+                keys.push("volume")
+            return keys
+        }
+        return []
+    }
+
+    function animationPropertyLabels(item) {
+        var labels = {
+            x: "Позиция X", y: "Позиция Y", scale: "Масштаб",
+            rotation: "Поворот", opacity: "Прозрачность", volume: "Громкость"
+        }
+        return animationPropertyKeys(item).map(function(key) { return labels[key] || key })
+    }
+
+    function animationPropertyKeyAt(item, index) {
+        var keys = animationPropertyKeys(item)
+        return index >= 0 && index < keys.length ? keys[index] : (keys.length ? keys[0] : "scale")
+    }
+
+    function animationPropertyIndex(item, key) {
+        return animationPropertyKeys(item).indexOf(key)
+    }
+
+    function animationPresetsFor(item) {
+        if (!item) return []
+        if (item.kind === "audio")
+            return [
+                { label: "♫ Fade In", preset: "fade-in" },
+                { label: "♫ Fade Out", preset: "fade-out" }
+            ]
+        if (item.kind === "effect")
+            return [
+                { label: "FX Slide In", preset: "slide-in" },
+                { label: "FX Slide Out", preset: "slide-out" },
+                { label: "FX Pop", preset: "pop" }
+            ]
+        return [
+            { label: "◉ Fade In", preset: "fade-in" },
+            { label: "◌ Fade Out", preset: "fade-out" },
+            { label: "↗ Zoom In", preset: "zoom-in" },
+            { label: "↘ Zoom Out", preset: "zoom-out" },
+            { label: "⇢ Slide In", preset: "slide-in" },
+            { label: "✦ Pop", preset: "pop" },
+            { label: "↻ Rotate", preset: "rotate" }
+        ]
+    }
+
     function animationPropertyRange(key) {
         if (key === "scale") return { min: 10, max: 300 }
         if (key === "rotation") return { min: -360, max: 360 }
         if (key === "opacity") return { min: 0, max: 100 }
+        if (key === "volume") return { min: 0, max: 200 }
+        if (key === "blur") return { min: 0, max: 100 }
         return { min: -7680, max: 7680 }
     }
 
     function keyframeBaseValue(item, key) {
-        var fallback = key === "scale" ? 100 : key === "opacity" ? 100 : 0
+        var fallback = key === "scale" ? 100
+            : (key === "opacity" || key === "volume") ? 100
+            : key === "blur" ? 55 : 0
         return timelineClipProperty(item, key, fallback)
+    }
+
+    function timelineClipKeyframeMarkers(item) {
+        var markers = []
+        if (!item || !item.keyframes) return markers
+        var keys = Object.keys(item.keyframes)
+        for (var i = 0; i < keys.length; ++i) {
+            var frames = timelineKeyframesFor(item, keys[i])
+            for (var j = 0; j < frames.length; ++j)
+                markers.push({ time: frames[j].time, key: keys[i] })
+        }
+        markers.sort(function(a, b) { return a.time - b.time })
+        return markers
+    }
+
+    function timelineClipHasAnimation(item) {
+        return timelineClipKeyframeMarkers(item).length > 0
+    }
+
+    function applyAnimationPreset(preset) {
+        if (!selectedTimelineClip || !selectedClipCanAnimate) {
+            statusMessage = "Сначала выбери клип на таймлайне"
+            return
+        }
+        var clip = selectedTimelineClip
+        var duration = Math.max(0.2, timelineClipDuration(clip))
+        var endTime = Math.min(duration, 0.65)
+        var keys = animationPropertyKeys(clip)
+        var tracks = Object.assign({}, clip.keyframes || ({}))
+        var baseX = keyframeBaseValue(clip, "x")
+        var baseY = keyframeBaseValue(clip, "y")
+        var baseScale = keyframeBaseValue(clip, "scale")
+        var baseRotation = keyframeBaseValue(clip, "rotation")
+        var baseOpacity = keyframeBaseValue(clip, "opacity")
+        var baseVolume = keyframeBaseValue(clip, "volume")
+        function setTrack(key, first, last, easing) {
+            if (keys.indexOf(key) < 0) return false
+            tracks[key] = [
+                { time: 0, value: first, easing: easing || "easeOut" },
+                { time: endTime, value: last, easing: "linear" }
+            ]
+            return true
+        }
+        var applied = false
+        if (preset === "fade-in") {
+            applied = setTrack(keys.indexOf("volume") >= 0 ? "volume" : "opacity",
+                0, keys.indexOf("volume") >= 0 ? baseVolume : baseOpacity, "easeOut")
+        } else if (preset === "fade-out") {
+            applied = setTrack(keys.indexOf("volume") >= 0 ? "volume" : "opacity",
+                keys.indexOf("volume") >= 0 ? baseVolume : baseOpacity, 0, "easeIn")
+        } else if (preset === "zoom-in") {
+            applied = setTrack("scale", Math.max(10, baseScale * 0.78), baseScale, "easeOut")
+        } else if (preset === "zoom-out") {
+            applied = setTrack("scale", baseScale, Math.min(300, baseScale * 1.22), "easeInOut")
+        } else if (preset === "slide-in") {
+            applied = setTrack("x", baseX - projectFrameWidth() * 0.22, baseX, "easeOut")
+        } else if (preset === "slide-out") {
+            applied = setTrack("x", baseX, baseX + projectFrameWidth() * 0.22, "easeIn")
+        } else if (preset === "pop") {
+            applied = setTrack("scale", Math.max(10, baseScale * 0.65), baseScale, "easeOut")
+        } else if (preset === "rotate") {
+            applied = setTrack("rotation", baseRotation - 90, baseRotation, "easeOut")
+        }
+        if (!applied) {
+            statusMessage = "Для этого типа клипа такой пресет недоступен"
+            return
+        }
+        recordTimelineHistory("Применить анимацию")
+        mediaFiles = mediaFiles.map(function(item) {
+            return String(item.clipId || "") === String(clip.clipId || "")
+                ? Object.assign({}, item, { keyframes: tracks }) : item
+        })
+        saveTimelineMedia(mediaFiles)
+        updateTimelinePreview(timelinePosition)
+        statusMessage = "Анимация применена · " + preset
+    }
+
+    function clearSelectedAnimation() {
+        if (!selectedTimelineClip || !timelineClipHasAnimation(selectedTimelineClip)) return
+        var clipId = String(selectedTimelineClip.clipId || "")
+        recordTimelineHistory("Очистить анимацию")
+        mediaFiles = mediaFiles.map(function(item) {
+            if (String(item.clipId || "") !== clipId) return item
+            var updated = Object.assign({}, item)
+            delete updated.keyframes
+            return updated
+        })
+        saveTimelineMedia(mediaFiles)
+        updateTimelinePreview(timelinePosition)
+        statusMessage = "Анимация клипа удалена"
     }
 
     function keyframeLocalTime(item) {
