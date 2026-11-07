@@ -445,6 +445,49 @@ ApplicationWindow {
         }, label)
     }
 
+    function applyMotionPreset(preset) {
+        if (!selectedClipCanTransition || !selectedClipCanZoom) {
+            statusMessage = "Выбери видео или изображение на V1/V2"
+            return
+        }
+        var changes = {
+            zoomMode: "none",
+            zoomAmount: 150,
+            transitionIn: 0,
+            transitionOut: 0
+        }
+        var label = "Анимация сброшена"
+        if (preset === "zoom-in") {
+            changes.zoomMode = "in"
+            changes.zoomAmount = 150
+            label = "Анимация · Zoom In"
+        } else if (preset === "zoom-out") {
+            changes.zoomMode = "out"
+            changes.zoomAmount = 150
+            label = "Анимация · Zoom Out"
+        } else if (preset === "smooth-zoom") {
+            changes.zoomMode = "in"
+            changes.zoomAmount = 125
+            label = "Анимация · Smooth Zoom"
+        } else if (preset === "fade-zoom-in") {
+            changes.zoomMode = "in"
+            changes.zoomAmount = 135
+            changes.transitionIn = 0.7
+            label = "Анимация · Fade + Zoom In"
+        } else if (preset === "fade-zoom-out") {
+            changes.zoomMode = "out"
+            changes.zoomAmount = 135
+            changes.transitionOut = 0.7
+            label = "Анимация · Fade + Zoom Out"
+        } else if (preset === "pop") {
+            changes.zoomMode = "in"
+            changes.zoomAmount = 118
+            changes.transitionIn = 0.25
+            label = "Анимация · Pop"
+        }
+        setSelectedClipProperties(changes, label)
+    }
+
     function addBlurEffect() {
         var source = selectedTimelineClip
         var start = Math.max(0, Number(timelinePosition || 0))
@@ -3866,6 +3909,55 @@ ApplicationWindow {
                             font.family: "monospace"
                             font.pixelSize: 11 * root.uiFontScale / 100
                             wrapMode: Text.WordWrap
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        Text {
+                            text: "АНИМАЦИИ КЛИПА"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: transitionsColumnLayout.width < 250 ? 1 : 2
+                            columnSpacing: 4
+                            rowSpacing: 4
+                            Repeater {
+                                model: [
+                                    { label: "↗ Zoom In", preset: "zoom-in" },
+                                    { label: "↘ Zoom Out", preset: "zoom-out" },
+                                    { label: "◎ Smooth Zoom", preset: "smooth-zoom" },
+                                    { label: "◉ Fade + Zoom", preset: "fade-zoom-in" },
+                                    { label: "◌ Zoom + Fade", preset: "fade-zoom-out" },
+                                    { label: "✦ Pop", preset: "pop" },
+                                    { label: "↺ Сбросить", preset: "none" }
+                                ]
+                                delegate: Button {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    Layout.preferredHeight: 32
+                                    enabled: root.selectedClipCanTransition && root.selectedClipCanZoom
+                                    text: modelData.label
+                                    font.family: "monospace"
+                                    font.pixelSize: 10
+                                    onClicked: root.applyMotionPreset(modelData.preset)
+                                    palette.buttonText: theme.text
+                                    background: Rectangle {
+                                        color: theme.panelAlt
+                                        border.color: theme.border
+                                        radius: 0
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            text: "Пресеты работают с ключевыми параметрами масштаба и прозрачности, сохраняются в проекте и учитываются при экспорте."
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 9 * root.uiFontScale / 100
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
                         Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                         Text {
