@@ -79,6 +79,10 @@ ApplicationWindow {
     readonly property bool selectedClipCanZoom: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
+    readonly property bool selectedClipCanAnimate: !!selectedTimelineClip
+        && (selectedTimelineClip.kind === "text"
+            || ((selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
+                && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)))
     readonly property bool selectedClipCanTransition: !!selectedTimelineClip
         && (selectedTimelineClip.kind === "video" || selectedTimelineClip.kind === "image")
         && (Number(selectedTimelineClip.track) === 0 || Number(selectedTimelineClip.track) === 1)
@@ -824,7 +828,7 @@ ApplicationWindow {
     }
 
     function toggleSelectedKeyframe(key) {
-        if (!selectedTimelineClip || !selectedClipCanZoom) {
+        if (!selectedTimelineClip || !selectedClipCanAnimate) {
             statusMessage = "Выбери видео или изображение на V1/V2"
             return
         }
@@ -1120,9 +1124,7 @@ ApplicationWindow {
         var textTarget = item.kind === "text"
         var baseWidth = textTarget ? timelineTextOverlay.width : previewVisualBaseWidth(item)
         var baseHeight = textTarget ? Math.max(32, timelineTextOverlay.height) : previewVisualBaseHeight(item)
-        var scale = (textTarget
-            ? timelineClipProperty(item, "scale", 100)
-            : timelineClipScaleAt(item, timelinePosition)) / 100
+        var scale = timelineClipScaleAt(item, timelinePosition) / 100
         if (!isFinite(scale) || scale <= 0) return false
         var centerX = previewCanvas.width / 2 + timelinePreviewOffsetX(item, previewCanvas.width)
         var centerY = previewCanvas.height / 2 + timelinePreviewOffsetY(item, previewCanvas.height)
@@ -4148,7 +4150,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: root.selectedClipCanZoom
+                            text: root.selectedClipCanAnimate
                                 ? "Выбери параметр, поставь курсор времени и добавь ключевой кадр. Между кадрами значение будет плавно меняться."
                                 : "Для работы с ключевыми кадрами выбери видео или изображение на V1/V2."
                             color: theme.muted
@@ -4174,7 +4176,7 @@ ApplicationWindow {
                             Button {
                                 text: root.hasKeyframeAtPlayhead(root.selectedTimelineClip, root.animationGraphProperty)
                                     ? "◆ Удалить" : "◇ Добавить"
-                                enabled: root.selectedClipCanZoom
+                                enabled: root.selectedClipCanAnimate
                                 onClicked: root.toggleSelectedKeyframe(root.animationGraphProperty)
                                 palette.buttonText: theme.text
                                 background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
@@ -4197,7 +4199,7 @@ ApplicationWindow {
                                 value: Math.round(root.timelineAnimatedValue(root.selectedTimelineClip,
                                     root.animationGraphProperty, root.timelinePosition,
                                     root.keyframeBaseValue(root.selectedTimelineClip, root.animationGraphProperty)))
-                                enabled: root.selectedClipCanZoom
+                                enabled: root.selectedClipCanAnimate
                                 onValueModified: root.setKeyframeValueAtPlayhead(root.animationGraphProperty, value)
                                 palette.text: theme.text
                                 background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
@@ -4277,7 +4279,7 @@ ApplicationWindow {
                             MouseArea {
                                 id: keyframeGraphMouse
                                 anchors.fill: parent
-                                enabled: root.selectedClipCanZoom
+                                enabled: root.selectedClipCanAnimate
                                 property int draggedFrameIndex: -1
                                 property var frameDraft: []
                                 property bool movedFrame: false
@@ -4357,7 +4359,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Button {
                                 text: "◀"
-                                enabled: root.selectedClipCanZoom
+                                enabled: root.selectedClipCanAnimate
                                 onClicked: root.seekAdjacentKeyframe(-1)
                                 palette.buttonText: theme.text
                                 background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
@@ -4372,7 +4374,7 @@ ApplicationWindow {
                             }
                             Button {
                                 text: "▶"
-                                enabled: root.selectedClipCanZoom
+                                enabled: root.selectedClipCanAnimate
                                 onClicked: root.seekAdjacentKeyframe(1)
                                 palette.buttonText: theme.text
                                 background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
@@ -4389,7 +4391,7 @@ ApplicationWindow {
                                     var easing = root.keyframeEasingAtPlayhead(root.selectedTimelineClip, root.animationGraphProperty)
                                     return easing === "easeIn" ? 1 : easing === "easeOut" ? 2 : easing === "easeInOut" ? 3 : 0
                                 }
-                                enabled: root.selectedClipCanZoom
+                                enabled: root.selectedClipCanAnimate
                                 onActivated: function(index) {
                                     root.setSelectedKeyframeEasing(root.animationGraphProperty,
                                         ["linear", "easeIn", "easeOut", "easeInOut"][index])
@@ -4880,11 +4882,12 @@ ApplicationWindow {
                             font.family: root.timelineTextAt(root.timelinePosition)
                                 ? String(root.timelineTextAt(root.timelinePosition).fontFamily || "Sans") : "Sans"
                             font.pixelSize: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "fontSize", 30)
-                            opacity: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "opacity", 100) / 100
+                            opacity: root.timelineAnimatedValue(root.timelineTextAt(root.timelinePosition), "opacity", root.timelinePosition,
+                root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "opacity", 100)) / 100
                             transform: [
                                 Scale {
-                                    xScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
-                                    yScale: root.timelineClipProperty(root.timelineTextAt(root.timelinePosition), "scale", 100) / 100
+                                    xScale: root.timelineClipScaleAt(root.timelineTextAt(root.timelinePosition), root.timelinePosition) / 100
+                                    yScale: root.timelineClipScaleAt(root.timelineTextAt(root.timelinePosition), root.timelinePosition) / 100
                                     origin.x: timelineTextOverlay.width / 2
                                     origin.y: timelineTextOverlay.height / 2
                                 },
