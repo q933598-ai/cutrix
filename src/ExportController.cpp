@@ -471,22 +471,40 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
     });
     int blurEffectSerial = 0;
     for (const Clip &effect : blurEffects) {
-        // FX clips use a transformable rectangle centered on the project frame.
-        // Keep preview and export geometry in sync: 40% of frame width by 30%
-        // of frame height at 100% scale, then apply the clip's x/y/scale/rotation.
-        const int regionWidth = qMax(2, qRound(m_outputWidth * 0.40 * effect.scale / 100.0));
-        const int regionHeight = qMax(2, qRound(m_outputHeight * 0.30 * effect.scale / 100.0));
-        const double angle = effect.rotation * 3.14159265358979323846 / 180.0;
-        const double offsetX = effect.x;
-        const double offsetY = effect.y;
-        // The mask rotates around the full frame's center. Pre-rotate its center
-        // offset so the resulting rectangle stays at the chosen X/Y.
-        const double maskCenterX = m_outputWidth / 2.0
-            + offsetX * std::cos(angle) + offsetY * std::sin(angle);
-        const double maskCenterY = m_outputHeight / 2.0
-            - offsetX * std::sin(angle) + offsetY * std::cos(angle);
-        const int maskX = qRound(maskCenterX - regionWidth / 2.0);
-        const int maskY = qRound(maskCenterY - regionHeight / 2.0);
+        // FX masks use the same local-time transform keyframes as regular visuals.
+        const bool animatedScale = hasKeyframes(effect.keyframes, QStringLiteral("scale"));
+        const bool animatedRotation = hasKeyframes(effect.keyframes, QStringLiteral("rotation"));
+        const bool animatedX = hasKeyframes(effect.keyframes, QStringLiteral("x"));
+        const bool animatedY = hasKeyframes(effect.keyframes, QStringLiteral("y"));
+        const QString localTime = QStringLiteral("(t-%1)").arg(number(effect.start));
+        const QString scaleExpression = animatedScale
+            ? escapeFilterExpression(keyframeExpression(effect.keyframes, QStringLiteral("scale"),
+                                                        effect.scale, localTime))
+            : number(effect.scale);
+        const QString offsetXExpression = animatedX
+            ? escapeFilterExpression(keyframeExpression(effect.keyframes, QStringLiteral("x"),
+                                                        effect.x, localTime))
+            : number(effect.x);
+        const QString offsetYExpression = animatedY
+            ? escapeFilterExpression(keyframeExpression(effect.keyframes, QStringLiteral("y"),
+                                                        effect.y, localTime))
+            : number(effect.y);
+        const QString angleDegrees = animatedRotation
+            ? escapeFilterExpression(keyframeExpression(effect.keyframes, QStringLiteral("rotation"),
+                                                        effect.rotation, localTime))
+            : number(effect.rotation);
+        const QString angleRadians = QStringLiteral("((%1)*PI/180)").arg(angleDegrees);
+        const int baseRegionWidth = qMax(2, qRound(m_outputWidth * 0.40));
+        const int baseRegionHeight = qMax(2, qRound(m_outputHeight * 0.30));
+        const int maskWidth = qMax(2, qRound(baseRegionWidth * effect.scale / 100.0));
+        const int maskHeight = qMax(2, qRound(baseRegionHeight * effect.scale / 100.0));
+        const double staticAngle = effect.rotation * 3.14159265358979323846 / 180.0;
+        const double staticCenterX = m_outputWidth / 2.0
+            + effect.x * std::cos(staticAngle) + effect.y * std::sin(staticAngle);
+        const double staticCenterY = m_outputHeight / 2.0
+            - effect.x * std::sin(staticAngle) + effect.y * std::cos(staticAngle);
+        const int staticMaskX = qRound(staticCenterX - maskWidth / 2.0);
+        const int staticMaskY = qRound(staticCenterY - maskHeight / 2.0);
 
         const QString base = QStringLiteral("fxbase%1").arg(blurEffectSerial);
         const QString blurInput = QStringLiteral("fxsrc%1").arg(blurEffectSerial);
@@ -500,15 +518,35 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         filters << QStringLiteral("[%1]gblur=sigma=%2:steps=2[%3]")
                        .arg(blurInput, number(effect.blur * 0.24), blurred);
 
-        QString maskFilter = QStringLiteral(
-            "color=c=black:s=%1x%2:r=%3:d=%4,"
-            "drawbox=x=%5:y=%6:w=%7:h=%8:color=white:t=fill,format=gray")
-                .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps)
-                .arg(number(m_timelineDuration)).arg(maskX).arg(maskY)
-                .arg(regionWidth).arg(regionHeight);
-        if (qAbs(effect.rotation) > 0.001) {
+        QString drawBox;
+        if (animatedScale || animatedRotation || animatedX || animatedY) {
+            const QString x = QStringLiteral("(%1+(%2)*cos(%3)+(%4)*sin(%3)-(%5*(%6)/100)/2)")
+                .arg(number(m_outputWidth / 2.0), offsetXExpression, angleRadians,
+                     offsetYExpression, number(baseRegionWidth), scaleExpression);
+            const QString y = QStringLiteral("(%1-(%2)*sin(%3)+(%4)*cos(%3)-(%5*(%6)/100)/2)")
+                .arg(number(m_outputHeight / 2.0), offsetXExpression, angleRadians,
+                     offsetYExpression, number(baseRegionHeight), scaleExpression);
+            const QString widthExpression = QStringLiteral("(%1*(%2)/100)")
+                .arg(number(baseRegionWidth), scaleExpression);
+            const QString heightExpression = QStringLiteral("(%1*(%2)/100)")
+                .arg(number(baseRegionHeight), scaleExpression);
+            drawBox = QStringLiteral("drawbox=x='%1':y='%2':w='%3':h='%4':color=white:t=fill,")
+                .arg(escapeFilterExpression(x), escapeFilterExpression(y),
+                     escapeFilterExpression(widthExpression), escapeFilterExpression(heightExpression));
+        } else {
+            drawBox = QStringLiteral("drawbox=x=%1:y=%2:w=%3:h=%4:color=white:t=fill,")
+                .arg(staticMaskX).arg(staticMaskY).arg(maskWidth).arg(maskHeight);
+        }
+
+        QString maskFilter = QStringLiteral("color=c=black:s=%1x%2:r=%3:d=%4,")
+            .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps).arg(number(m_timelineDuration));
+        maskFilter += drawBox + QStringLiteral("format=gray");
+        if (animatedRotation) {
+            maskFilter += QStringLiteral(",rotate=a='%1':ow=%2:oh=%3:c=black")
+                .arg(escapeFilterExpression(angleRadians)).arg(m_outputWidth).arg(m_outputHeight);
+        } else if (qAbs(effect.rotation) > 0.001) {
             maskFilter += QStringLiteral(",rotate=%1:ow=%2:oh=%3:c=black")
-                .arg(number(angle)).arg(m_outputWidth).arg(m_outputHeight);
+                .arg(number(staticAngle)).arg(m_outputWidth).arg(m_outputHeight);
         }
         filters << maskFilter + QStringLiteral("[%1]").arg(mask);
         filters << QStringLiteral("[%1][%2]alphamerge[%3]")
