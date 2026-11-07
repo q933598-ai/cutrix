@@ -428,7 +428,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                                     .arg(number(qMax(0.0, clip.duration - fadeOut)), number(fadeOut));
         if (animatedOpacity) {
             const QString opacityExpression = escapeFilterExpression(keyframeExpression(
-                clip.keyframes, QStringLiteral("opacity"), clip.opacity, QStringLiteral("t")));
+                clip.keyframes, QStringLiteral("opacity"), clip.opacity, QStringLiteral("T")));
             transitionFilter += QStringLiteral("geq=a='alpha(X,Y)*((%1)/100)',")
                                     .arg(opacityExpression);
         }
