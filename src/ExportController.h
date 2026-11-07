@@ -5,6 +5,7 @@
 #include <QTemporaryDir>
 #include <QVariantList>
 #include <QStringList>
+#include <QVariantMap>
 #include <QVector>
 
 class ExportController final : public QObject
@@ -50,6 +51,7 @@ private:
         double transitionOut = 0.0;
         double rotation = 0.0;
         double opacity = 100.0;
+        QVariantMap keyframes;
         double volume = 100.0;
         double audioPan = 0.0;
         double audioFadeIn = 0.0;
