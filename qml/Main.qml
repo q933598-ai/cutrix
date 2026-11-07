@@ -895,14 +895,27 @@ ApplicationWindow {
         return timelineClipKeyframeMarkers(item).length > 0
     }
 
+    function previewSelectedAnimation() {
+        if (!selectedTimelineClip || !selectedClipCanAnimate
+                || !timelineClipHasAnimation(selectedTimelineClip)) {
+            statusMessage = "Сначала добавь анимацию выбранному клипу"
+            return
+        }
+        if (timelinePlaybackTimer.running) timelinePlaybackTimer.stop()
+        timelinePosition = Math.max(0, Number(selectedTimelineClip.start || 0))
+        updateTimelinePreview(timelinePosition)
+        timelinePlaybackTimer.start()
+        statusMessage = "Предпросмотр анимации · " + String(selectedTimelineClip.name || selectedTimelineClip.kind)
+    }
+
     function applyAnimationPreset(preset) {
         if (!selectedTimelineClip || !selectedClipCanAnimate) {
             statusMessage = "Сначала выбери клип на таймлайне"
             return
         }
         var clip = selectedTimelineClip
-        var duration = Math.max(0.2, timelineClipDuration(clip))
-        var endTime = Math.min(duration, 0.65)
+        var duration = Math.max(0.05, timelineClipDuration(clip))
+        var endTime = Math.max(0.025, Math.min(duration, 0.65))
         var keys = animationPropertyKeys(clip)
         var tracks = Object.assign({}, clip.keyframes || ({}))
         var baseX = keyframeBaseValue(clip, "x")
@@ -960,8 +973,9 @@ ApplicationWindow {
                 ? Object.assign({}, item, { keyframes: tracks }) : item
         })
         saveTimelineMedia(mediaFiles)
+        timelinePosition = Math.max(0, Number(clip.start || 0))
         updateTimelinePreview(timelinePosition)
-        statusMessage = "Анимация применена · " + preset
+        statusMessage = "Анимация применена · " + preset + " · нажми «Предпросмотр»"
     }
 
     function clearSelectedAnimation() {
@@ -4469,14 +4483,21 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         Button {
-                            text: "↺ Удалить анимацию"
+                            text: "▶ Предпросмотр"
+                            enabled: root.timelineClipHasAnimation(root.selectedTimelineClip)
+                            onClicked: root.previewSelectedAnimation()
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.accent; radius: 0 }
+                        }
+                        Button {
+                            text: "↺ Удалить"
                             enabled: root.timelineClipHasAnimation(root.selectedTimelineClip)
                             onClicked: root.clearSelectedAnimation()
                             palette.buttonText: theme.text
                             background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 0 }
                         }
-                        Item { Layout.fillWidth: true }
                     }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
                         Text {
                             text: "KEYFRAMES · КЛЮЧЕВЫЕ КАДРЫ"
