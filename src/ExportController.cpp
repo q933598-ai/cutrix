@@ -80,6 +80,70 @@ double boundedItemValue(const QVariantMap &item, const QString &key,
     return qBound(minimum, value, maximum);
 }
 
+QString expressionNumber(double value)
+{
+    return QString::number(value, 'g', 12);
+}
+
+bool hasKeyframes(const QVariantMap &tracks, const QString &property)
+{
+    return tracks.value(property).toList().size() >= 2;
+}
+
+QString keyframeExpression(const QVariantMap &tracks, const QString &property,
+                           double fallback, const QString &timeExpression)
+{
+    struct Point { double time = 0.0; double value = 0.0; QString easing; };
+    QVector<Point> points;
+    const QVariantList source = tracks.value(property).toList();
+    for (const QVariant &entry : source) {
+        const QVariantMap frame = entry.toMap();
+        bool timeOk = false, valueOk = false;
+        const double time = frame.value(QStringLiteral("time")).toDouble(&timeOk);
+        const double value = frame.value(QStringLiteral("value")).toDouble(&valueOk);
+        if (!timeOk || !valueOk || !std::isfinite(time) || !std::isfinite(value)) continue;
+        Point point;
+        point.time = qMax(0.0, time);
+        point.value = value;
+        point.easing = frame.value(QStringLiteral("easing"), QStringLiteral("linear")).toString();
+        points.push_back(point);
+    }
+    std::stable_sort(points.begin(), points.end(), [](const Point &a, const Point &b) {
+        return a.time < b.time;
+    });
+    if (points.isEmpty()) return expressionNumber(fallback);
+    if (points.size() == 1) return expressionNumber(points.front().value);
+    QString result = expressionNumber(points.back().value);
+    for (int i = points.size() - 2; i >= 0; --i) {
+        const Point &left = points.at(i);
+        const Point &right = points.at(i + 1);
+        const double span = right.time - left.time;
+        if (span <= 0.000001) continue;
+        const QString progress = QStringLiteral("((%1-%2)/%3)")
+            .arg(timeExpression, expressionNumber(left.time), expressionNumber(span));
+        QString eased = progress;
+        if (left.easing == QStringLiteral("easeIn"))
+            eased = QStringLiteral("(%1*%1)").arg(progress);
+        else if (left.easing == QStringLiteral("easeOut"))
+            eased = QStringLiteral("(1-(1-%1)*(1-%1))").arg(progress);
+        else if (left.easing == QStringLiteral("easeInOut"))
+            eased = QStringLiteral("if(lt(%1,0.5),2*%1*%1,1-2*(1-%1)*(1-%1))").arg(progress);
+        const QString interpolated = QStringLiteral("(%1+(%2-%1)*%3)")
+            .arg(expressionNumber(left.value), expressionNumber(right.value), eased);
+        result = QStringLiteral("if(lt(%1,%2),%3,%4)")
+            .arg(timeExpression, expressionNumber(right.time), interpolated, result);
+    }
+    return QStringLiteral("if(lt(%1,%2),%3,%4)")
+        .arg(timeExpression, expressionNumber(points.front().time),
+             expressionNumber(points.front().value), result);
+}
+
+QString escapeFilterExpression(QString expression)
+{
+    expression.replace(QStringLiteral(","), QStringLiteral("\\,"));
+    return expression;
+}
+
 QString ffmpegFontColor(QString value)
 {
     static const QRegularExpression valid(QStringLiteral("^#([0-9a-fA-F]{6})$"));
@@ -184,6 +248,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.transitionOut = boundedItemValue(item, QStringLiteral("transitionOut"), 0.0, 0.0, 30.0);
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
+        clip.keyframes = item.value(QStringLiteral("keyframes")).toMap();
         clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
         clip.audioPan = boundedItemValue(item, QStringLiteral("audioPan"), 0.0, -100.0, 100.0);
         clip.audioFadeIn = boundedItemValue(item, QStringLiteral("audioFadeIn"), 0.0, 0.0, 60.0);
@@ -308,7 +373,16 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const int scaledWidth = qMax(2, qRound(m_outputWidth * clip.scale / 100.0) & ~1);
         const int scaledHeight = qMax(2, qRound(m_outputHeight * clip.scale / 100.0) & ~1);
         const QString label = QStringLiteral("visual%1").arg(visualSerial);
-        const QString angle = number(clip.rotation * 3.14159265358979323846 / 180.0);
+        const bool animatedScale = hasKeyframes(clip.keyframes, QStringLiteral("scale"));
+        const bool animatedRotation = hasKeyframes(clip.keyframes, QStringLiteral("rotation"));
+        const bool animatedOpacity = hasKeyframes(clip.keyframes, QStringLiteral("opacity"));
+        const bool animatedX = hasKeyframes(clip.keyframes, QStringLiteral("x"));
+        const bool animatedY = hasKeyframes(clip.keyframes, QStringLiteral("y"));
+        const QString angle = animatedRotation
+            ? QStringLiteral("(%1)*PI/180").arg(escapeFilterExpression(
+                  keyframeExpression(clip.keyframes, QStringLiteral("rotation"), clip.rotation,
+                                     QStringLiteral("t"))))
+            : number(clip.rotation * 3.14159265358979323846 / 180.0);
         QString zoomFilter;
         if (clip.reverse)
             zoomFilter = QStringLiteral("reverse,");
@@ -325,6 +399,12 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         }
         // Blur is stored as 0..100 in the editor and converted to a bounded
         // Gaussian sigma for the final-resolution FFmpeg export.
+        if (animatedScale) {
+            const QString scaleExpression = escapeFilterExpression(keyframeExpression(
+                clip.keyframes, QStringLiteral("scale"), clip.scale, QStringLiteral("t")));
+            zoomFilter += QStringLiteral("scale=w='iw*((%1)/%2)':h='ih*((%1)/%2)':eval=frame,")
+                              .arg(scaleExpression, number(qMax(0.001, clip.scale)));
+        }
         if (clip.blur > 0.0)
             zoomFilter += QStringLiteral("gblur=sigma=%1:steps=2,").arg(number(clip.blur * 0.24));
 
@@ -339,12 +419,18 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         if (fadeOut > 0.001)
             transitionFilter += QStringLiteral("fade=t=out:st=%1:d=%2:alpha=1,")
                                     .arg(number(qMax(0.0, clip.duration - fadeOut)), number(fadeOut));
+        if (animatedOpacity) {
+            const QString opacityExpression = escapeFilterExpression(keyframeExpression(
+                clip.keyframes, QStringLiteral("opacity"), clip.opacity, QStringLiteral("t")));
+            transitionFilter += QStringLiteral("lut=a='val*((%1)/100)':eval=frame,")
+                                    .arg(opacityExpression);
+        }
 
         filters << QStringLiteral("[%1:v:0]setpts=PTS-STARTPTS,"
                                  "eq=brightness=%2:contrast=%3:saturation=%4,format=rgba,"
                                  "scale=%5:%6:force_original_aspect_ratio=decrease,"
                                  "pad=%5:%6:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                                 "rotate=%7:ow=rotw(iw):oh=roth(ih):c=black@0,setsar=1,"
+                                 "rotate='%7':ow=rotw(iw):oh=roth(ih):c=black@0,setsar=1,"
                                  "tpad=stop_mode=clone:stop_duration=%9,trim=duration=%9,%12%13"
                                  "colorchannelmixer=aa=%8,setpts=PTS-STARTPTS+%10/TB[%11]")
                        .arg(clip.inputIndex)
@@ -352,14 +438,22 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
                        .arg(number(1.0 + clip.contrast))
                        .arg(number(1.0 + clip.saturation))
                        .arg(scaledWidth).arg(scaledHeight).arg(angle)
-                       .arg(number(clip.opacity / 100.0))
+                       .arg(number(animatedOpacity ? 1.0 : clip.opacity / 100.0))
                        .arg(number(clip.duration)).arg(number(clip.start)).arg(label)
                        .arg(zoomFilter).arg(transitionFilter);
 
         const QString merged = QStringLiteral("mix%1").arg(visualSerial);
-        filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+%3':y='(H-h)/2+%4':"
+        const QString offsetXExpression = animatedX
+            ? escapeFilterExpression(keyframeExpression(clip.keyframes, QStringLiteral("x"),
+                clip.x, QStringLiteral("(t-%1)").arg(number(clip.start))))
+            : number(clip.x);
+        const QString offsetYExpression = animatedY
+            ? escapeFilterExpression(keyframeExpression(clip.keyframes, QStringLiteral("y"),
+                clip.y, QStringLiteral("(t-%1)").arg(number(clip.start))))
+            : number(clip.y);
+        filters << QStringLiteral("[%1][%2]overlay=x='(W-w)/2+(%3)':y='(H-h)/2+(%4)':"
                                  "eof_action=pass:shortest=0:repeatlast=0:enable='between(t,%5,%6)'[%7]")
-                       .arg(currentVideo, label, number(clip.x), number(clip.y),
+                       .arg(currentVideo, label, offsetXExpression, offsetYExpression,
                             number(clip.start), number(clip.start + clip.duration), merged);
         currentVideo = merged;
         ++visualSerial;
