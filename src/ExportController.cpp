@@ -429,7 +429,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         if (animatedOpacity) {
             const QString opacityExpression = escapeFilterExpression(keyframeExpression(
                 clip.keyframes, QStringLiteral("opacity"), clip.opacity, QStringLiteral("T")));
-            transitionFilter += QStringLiteral("geq=a='alpha(X,Y)*((%1)/100)',")
+            transitionFilter += QStringLiteral("geq=lum='lum(X,Y)':a='alpha(X,Y)*((%1)/100)',")
                                     .arg(opacityExpression);
         }
 
@@ -598,7 +598,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
             : QString::number(scaledFontSize);
         const QString titleOpacityExpression = number(animatedOpacity ? 1.0 : clip.opacity / 100.0);
         const QString titleAlphaFilter = animatedOpacity
-            ? QStringLiteral("geq=a='alpha(X,Y)*((%1)/100)',").arg(escapeFilterExpression(
+            ? QStringLiteral("geq=lum='lum(X,Y)':a='alpha(X,Y)*((%1)/100)',").arg(escapeFilterExpression(
                 keyframeExpression(clip.keyframes, QStringLiteral("opacity"),
                                    clip.opacity, QStringLiteral("T"))))
             : QString();
