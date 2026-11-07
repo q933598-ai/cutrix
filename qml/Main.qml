@@ -4365,9 +4365,7 @@ ApplicationWindow {
                     }
                 }
 
-            }
-
-            ScrollView {
+                        ScrollView {
                 id: animationScroll
                 anchors.fill: parent
                 visible: root.activeSidebarSection === "Анимация"
@@ -4728,6 +4726,9 @@ ApplicationWindow {
                     }
                 }
             }
+            }
+
+
 
             Rectangle {
                 id: mediaPanelSplitter
