@@ -4230,7 +4230,14 @@ ApplicationWindow {
                                 if (!clip || width <= 0 || height <= 0) return
                                 var duration = Math.max(0.001, root.timelineClipDuration(clip))
                                 var key = root.animationGraphProperty
-                                var frames = root.timelineKeyframesFor(clip, key)
+                                var graphClip = clip
+                                if (keyframeGraphMouse.pressed && keyframeGraphMouse.draggedFrameIndex >= 0) {
+                                    graphClip = Object.assign({}, clip)
+                                    var draftTracks = Object.assign({}, clip.keyframes || ({}))
+                                    draftTracks[key] = keyframeGraphMouse.frameDraft
+                                    graphClip.keyframes = draftTracks
+                                }
+                                var frames = root.timelineKeyframesFor(graphClip, key)
                                 var range = root.animationPropertyRange(key)
                                 function valueY(value) {
                                     var normalized = Math.max(0, Math.min(1, (value - range.min) / (range.max - range.min)))
@@ -4246,7 +4253,7 @@ ApplicationWindow {
                                 var steps = Math.max(30, Math.floor(width / 2))
                                 for (var step = 0; step <= steps; ++step) {
                                     var local = duration * step / steps
-                                    var value = root.timelineAnimatedValue(clip, key, Number(clip.start || 0) + local,
+                                    var value = root.timelineAnimatedValue(graphClip, key, Number(clip.start || 0) + local,
                                         root.keyframeBaseValue(clip, key))
                                     var px = width * step / steps
                                     var py = valueY(value)
@@ -4316,10 +4323,10 @@ ApplicationWindow {
                                     if (movedFrame && draggedFrameIndex >= 0) {
                                         var clip = root.selectedTimelineClip
                                         var index = draggedFrameIndex
+                                        var newTime = Number(frameDraft[index].time)
                                         frameDraft.sort(function(a, b) { return a.time - b.time })
                                         var tracks = Object.assign({}, clip.keyframes || ({}))
                                         tracks[root.animationGraphProperty] = frameDraft
-                                        var newTime = frameDraft[index].time
                                         root.setSelectedClipProperties({ keyframes: tracks }, "Переместить ключевой кадр")
                                         root.timelinePosition = Number(clip.start || 0) + newTime
                                         root.updateTimelinePreview(root.timelinePosition)
