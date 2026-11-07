@@ -476,6 +476,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         const bool animatedRotation = hasKeyframes(effect.keyframes, QStringLiteral("rotation"));
         const bool animatedX = hasKeyframes(effect.keyframes, QStringLiteral("x"));
         const bool animatedY = hasKeyframes(effect.keyframes, QStringLiteral("y"));
+        const bool animatedBlur = hasKeyframes(effect.keyframes, QStringLiteral("blur"));
         const QString localTime = QStringLiteral("(t-%1)").arg(number(effect.start));
         const QString scaleExpression = animatedScale
             ? escapeFilterExpression(keyframeExpression(effect.keyframes, QStringLiteral("scale"),
@@ -541,6 +542,12 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         QString maskFilter = QStringLiteral("color=c=black:s=%1x%2:r=%3:d=%4,")
             .arg(m_outputWidth).arg(m_outputHeight).arg(m_outputFps).arg(number(m_timelineDuration));
         maskFilter += drawBox + QStringLiteral("format=gray");
+        if (animatedBlur) {
+            const QString blurExpression = escapeFilterExpression(keyframeExpression(
+                effect.keyframes, QStringLiteral("blur"), effect.blur,
+                QStringLiteral("(T-%1)").arg(number(effect.start))));
+            maskFilter += QStringLiteral(",geq=lum='lum(X,Y)*((%1)/100)'").arg(blurExpression);
+        }
         if (animatedRotation) {
             maskFilter += QStringLiteral(",rotate=a='%1':ow=%2:oh=%3:c=black")
                 .arg(escapeFilterExpression(angleRadians)).arg(m_outputWidth).arg(m_outputHeight);
