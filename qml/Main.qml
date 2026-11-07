@@ -773,6 +773,7 @@ ApplicationWindow {
         if (frames.length === 0) return baseValue
         var localTime = Number(seconds) - Number(item.start || 0)
         if (!isFinite(localTime)) localTime = 0
+        if (localTime < frames[0].time) return baseValue
         if (localTime <= frames[0].time) return frames[0].value
         if (localTime >= frames[frames.length - 1].time) return frames[frames.length - 1].value
         for (var i = 0; i < frames.length - 1; ++i) {
