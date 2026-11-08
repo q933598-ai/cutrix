@@ -35,6 +35,8 @@ public:
     Q_INVOKABLE QString thumbnail(const QString &url);
     Q_INVOKABLE QString thumbnailAt(const QString &url, double seconds);
     Q_INVOKABLE QString previewFrameAt(const QString &url, double seconds);
+    // Generate a cached audio waveform for a clip segment without blocking the QML UI.
+    Q_INVOKABLE QString waveformAt(const QString &url, double sourceOffset, double duration);
 
 signals:
     void thumbnailRevisionChanged();
@@ -50,6 +52,8 @@ private:
     mutable QMutex m_thumbnailMutex;
     QSet<QString> m_pendingThumbnails;
     QSet<QString> m_failedThumbnails;
+    QSet<QString> m_pendingWaveforms;
+    QSet<QString> m_failedWaveforms;
     int m_thumbnailRevision = 0;
     // Limit background ffmpeg thumbnail jobs so importing many clips does not
     // saturate every CPU core while the editor is open.
