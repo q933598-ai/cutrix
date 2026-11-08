@@ -137,6 +137,84 @@ QString MediaTools::previewFrameAt(const QString &url, double seconds)
     return thumbnailAtSize(url, seconds, 1280);
 }
 
+QString MediaTools::waveformAt(const QString &url, double sourceOffset, double duration)
+{
+    const QString path = localPath(url);
+    const QFileInfo info(path);
+    if (!info.isFile() || !std::isfinite(sourceOffset) || sourceOffset < 0.0
+            || !std::isfinite(duration) || duration <= 0.0)
+        return {};
+
+    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (ffmpeg.isEmpty())
+        return {};
+
+    const QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cacheDir = cacheRoot + QStringLiteral("/audio-waveforms");
+    if (cacheRoot.isEmpty() || !QDir().mkpath(cacheDir))
+        return {};
+
+    const QByteArray keyBytes = QCryptographicHash::hash(
+        (QStringLiteral("cutrix-waveform-v1|") + info.absoluteFilePath()
+         + QLatin1Char('|') + QString::number(info.size())
+         + QLatin1Char('|') + QString::number(info.lastModified().toSecsSinceEpoch())
+         + QLatin1Char('|') + QString::number(sourceOffset, 'f', 3)
+         + QLatin1Char('|') + QString::number(duration, 'f', 3))
+            .toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString key = QString::fromLatin1(keyBytes);
+    const QString output = cacheDir + QLatin1Char('/') + key + QStringLiteral(".png");
+    if (QFileInfo::exists(output) && QFileInfo(output).size() > 0)
+        return QUrl::fromLocalFile(output).toString();
+
+    {
+        QMutexLocker lock(&m_thumbnailMutex);
+        if (m_pendingWaveforms.contains(key) || m_failedWaveforms.contains(key))
+            return {};
+        m_pendingWaveforms.insert(key);
+    }
+
+    const QString seek = QString::number(sourceOffset, 'f', 3);
+    const QString segmentDuration = QString::number(duration, 'f', 3);
+    QPointer<MediaTools> guardedThis(this);
+    m_thumbnailPool.start(QRunnable::create(
+        [guardedThis, ffmpeg, path, output, key, seek, segmentDuration]() {
+            QFile::remove(output);
+            const QString filter = QStringLiteral(
+                "aformat=channel_layouts=mono,"
+                "showwavespic=s=1400x64:colors=0x9ccfd8:scale=sqrt:draw=full,"
+                "format=rgba,colorkey=black:0.02:0.0");
+            runTool(ffmpeg, {
+                QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+                QStringLiteral("-threads"), QStringLiteral("1"),
+                QStringLiteral("-ss"), seek,
+                QStringLiteral("-t"), segmentDuration,
+                QStringLiteral("-i"), path,
+                QStringLiteral("-filter_complex"), filter,
+                QStringLiteral("-frames:v"), QStringLiteral("1"),
+                QStringLiteral("-y"), output
+            }, 60000);
+
+            const bool succeeded = QFileInfo::exists(output) && QFileInfo(output).size() > 0;
+            if (!succeeded) QFile::remove(output);
+            if (!guardedThis) return;
+
+            QMetaObject::invokeMethod(guardedThis.data(), [guardedThis, key, succeeded]() {
+                if (!guardedThis) return;
+                {
+                    QMutexLocker lock(&guardedThis->m_thumbnailMutex);
+                    guardedThis->m_pendingWaveforms.remove(key);
+                    if (!succeeded)
+                        guardedThis->m_failedWaveforms.insert(key);
+                }
+                if (succeeded) {
+                    ++guardedThis->m_thumbnailRevision;
+                    emit guardedThis->thumbnailRevisionChanged();
+                }
+            }, Qt::QueuedConnection);
+        }));
+    return {};
+}
+
 QString MediaTools::thumbnailAtSize(const QString &url, double seconds, int maxWidth)
 {
     const QString path = localPath(url);
