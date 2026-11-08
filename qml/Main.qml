@@ -5798,6 +5798,22 @@ ApplicationWindow {
                             }
                         }
                     }
+                    CheckBox {
+                        Layout.fillWidth: true
+                        visible: root.selectedClipCanAudio
+                        enabled: root.selectedClipCanAudio
+                            && (root.selectedTimelineClip.kind !== "video"
+                                || root.selectedTimelineClip.hasAudio !== false)
+                        text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "video"
+                            ? "Отключить звук видео (включая речь)"
+                            : "Отключить эту аудиодорожку"
+                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioMuted)
+                        onToggled: root.setSelectedClipProperties({ audioMuted: checked },
+                            checked ? "Звук клипа отключён" : "Звук клипа включён")
+                        palette.text: theme.text
+                        font.family: "monospace"
+                        font.pixelSize: 10 * root.uiFontScale / 100
+                    }
                     ColumnLayout {
                         Layout.fillWidth: true
                         visible: !!root.selectedTimelineClip && root.selectedTimelineClip.kind === "text"
@@ -6316,7 +6332,34 @@ ApplicationWindow {
                                                     }
                                                 }
                                             }
+                                            Image {
+                                                id: timelineClipWaveform
+                                                z: 2
+                                                visible: !timelineClip.draggingClip
+                                                    && (timelineClip.modelData.kind === "audio"
+                                                        || (timelineClip.modelData.kind === "video"
+                                                            && timelineClip.modelData.hasAudio !== false))
+                                                x: 3
+                                                y: timelineClip.modelData.kind === "audio"
+                                                    ? 3 : parent.height - height - 2
+                                                width: Math.max(0, parent.width - 6)
+                                                height: timelineClip.modelData.kind === "audio"
+                                                    ? Math.max(1, parent.height - 6) : 10
+                                                source: {
+                                                    // Refresh this source after FFmpeg finishes the async waveform job.
+                                                    var revision = mediaTools.thumbnailRevision
+                                                    return mediaTools.waveformAt(
+                                                        timelineClip.modelData.url,
+                                                        Math.max(0, Number(timelineClip.modelData.sourceOffset || 0)),
+                                                        root.timelineClipDuration(timelineClip.modelData))
+                                                }
+                                                fillMode: Image.Stretch
+                                                asynchronous: true
+                                                cache: true
+                                                opacity: timelineClip.modelData.audioMuted ? 0.22 : 0.9
+                                            }
                                             Text {
+                                                z: 3
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 5
                                                 anchors.rightMargin: root.timelineClipHasAnimation(modelData) ? 36 : 3
