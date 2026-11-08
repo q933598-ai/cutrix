@@ -1695,9 +1695,8 @@ ApplicationWindow {
         return Math.max(0, best)
     }
 
-    // Hard collision guard for drag/drop. Unlike the proximity-snap helper above,
-    // this always advances the clip to the right until its whole interval is free.
-    // It can inspect a pending updated array, so release/drop never relies on stale UI state.
+    // Drag/drop never moves other clips automatically. It only magnet-snaps the
+    // moving clip to a nearby edge, then keeps the interval collision-free.
     function timelineCollisionSafeStart(track, desiredStart, duration, excludedClipId, items) {
         var clips = items || mediaFiles
         var startValue = Number(desiredStart)
@@ -1719,11 +1718,48 @@ ApplicationWindow {
                 blockers.push({ start: otherStart, end: otherEnd })
         }
         blockers.sort(function(a, b) { return a.start - b.start })
+
+        function isFree(candidate) {
+            if (!isFinite(candidate) || candidate < 0) return false
+            for (var k = 0; k < blockers.length; ++k) {
+                // Half-open intervals: clips may touch, but never overlap.
+                if (candidate < blockers[k].end - 0.0001
+                        && candidate + length > blockers[k].start + 0.0001)
+                    return false
+            }
+            return true
+        }
+
+        // Magnetic snapping works in screen pixels, with a time cap at low zoom
+        // so clips don't unexpectedly jump across a large part of the timeline.
+        var snapTolerance = Math.max(0.06,
+            Math.min(0.75, 8 / Math.max(0.001, timelineCanvas.timelineScale)))
+        var bestSnap = -1
+        var bestDistance = snapTolerance + 0.0001
         for (var j = 0; j < blockers.length; ++j) {
-            // Half-open intervals: ending exactly where another clip starts is valid.
-            if (start < blockers[j].end - 0.0001
-                    && start + length > blockers[j].start + 0.0001)
-                start = blockers[j].end
+            // Left edge: place this clip immediately after an existing clip.
+            // Right edge: place this clip immediately before an existing clip.
+            var edgeAfter = blockers[j].end
+            var edgeBefore = Math.max(0, blockers[j].start - length)
+            var edges = [edgeAfter, edgeBefore]
+            for (var e = 0; e < edges.length; ++e) {
+                var edge = edges[e]
+                var distance = Math.abs(edge - start)
+                if (distance <= snapTolerance && distance < bestDistance && isFree(edge)) {
+                    bestSnap = edge
+                    bestDistance = distance
+                }
+            }
+        }
+        if (bestSnap >= 0) return bestSnap
+        if (isFree(start)) return start
+
+        // If the requested position overlaps a clip and isn't close enough to snap,
+        // move only the dragged clip to the next free position. Neighbours stay put.
+        for (var p = 0; p < blockers.length; ++p) {
+            if (start < blockers[p].end - 0.0001
+                    && start + length > blockers[p].start + 0.0001)
+                start = blockers[p].end
         }
         return Math.max(0, start)
     }
@@ -6446,7 +6482,7 @@ ApplicationWindow {
                                                     if (movingIndex < 0) return
 
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
-                                                    var desiredStart = Math.max(0, Math.round(draggedX / Math.max(0.001, timelineCanvas.timelineScale)))
+                                                    var desiredStart = Math.max(0, draggedX / Math.max(0.001, timelineCanvas.timelineScale))
                                                     // The track rows start at y=25 and repeat every 37 pixels.
                                                     var requestedTrack = Math.max(0, Math.min(5, Math.floor((scenePos.y - 23.5) / 37)))
                                                      var targetTrack = root.timelineTrackForKind(updated[movingIndex].kind, requestedTrack)
@@ -6560,7 +6596,7 @@ ApplicationWindow {
                                             // Each drop creates a separate timeline instance, even when
                                             // the same source file is used more than once.
                                             var source = updated[sourceIndex]
-                                            var requestedStart = Math.max(0, Math.round(drop.x / Math.max(0.001, timelineCanvas.timelineScale)))
+                                            var requestedStart = Math.max(0, drop.x / Math.max(0.001, timelineCanvas.timelineScale))
                                              var targetTrack = root.timelineTrackForKind(source.kind, timelineTrack.index)
                                              var duration = root.timelineClipDuration(source)
                                              var start = root.timelineCollisionSafeStart(
