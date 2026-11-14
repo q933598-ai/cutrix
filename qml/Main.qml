@@ -2835,7 +2835,8 @@ ApplicationWindow {
         model: root.mediaFiles.filter(function(item) {
             var track = Number(item.track)
             return (item.kind === "audio" && (track === 2 || track === 3))
-                || (item.kind === "video" && track >= 0 && track <= 3 && item.hasAudio !== false)
+                || (item.kind === "video" && track >= 0 && track <= 3
+                    && item.hasAudio !== false && !item.audioSeparated)
         })
         delegate: MediaPlayer {
             required property var modelData
@@ -5932,11 +5933,12 @@ ApplicationWindow {
                             && (root.selectedTimelineClip.kind !== "video"
                                 || root.selectedTimelineClip.hasAudio !== false)
                         text: root.selectedTimelineClip && root.selectedTimelineClip.kind === "video"
-                            ? "Отключить звук видео (включая речь)"
+                            ? (root.timelineLinkedPeer(root.selectedTimelineClip)
+                                ? "Отключить связанный звук"
+                                : "Отключить звук видео (включая речь)")
                             : "Отключить эту аудиодорожку"
-                        checked: Boolean(root.selectedTimelineClip && root.selectedTimelineClip.audioMuted)
-                        onToggled: root.setSelectedClipProperties({ audioMuted: checked },
-                            checked ? "Звук клипа отключён" : "Звук клипа включён")
+                        checked: root.selectedAudioIsMuted()
+                        onToggled: root.setSelectedAudioMuted(checked)
                         palette.text: theme.text
                         font.family: "monospace"
                         font.pixelSize: 10 * root.uiFontScale / 100
@@ -6480,7 +6482,8 @@ ApplicationWindow {
                                                 visible: !timelineClip.draggingClip
                                                     && (timelineClip.modelData.kind === "audio"
                                                         || (timelineClip.modelData.kind === "video"
-                                                            && timelineClip.modelData.hasAudio !== false))
+                                                            && timelineClip.modelData.hasAudio !== false
+                                                            && !timelineClip.modelData.audioSeparated))
                                                 x: 3
                                                 y: timelineClip.modelData.kind === "audio"
                                                     ? 3 : parent.height - height - 2
