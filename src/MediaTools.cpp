@@ -215,6 +215,88 @@ QString MediaTools::waveformAt(const QString &url, double sourceOffset, double d
     return {};
 }
 
+
+QString MediaTools::amplifiedAudioPreview(const QString &url, double sourceOffset, double duration)
+{
+    const QString path = localPath(url);
+    const QFileInfo info(path);
+    if (!info.isFile() || !std::isfinite(sourceOffset) || sourceOffset < 0.0
+            || !std::isfinite(duration) || duration <= 0.0)
+        return {};
+
+    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (ffmpeg.isEmpty())
+        return {};
+
+    const QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cacheDir = cacheRoot + QStringLiteral("/audio-preview-boost");
+    if (cacheRoot.isEmpty() || !QDir().mkpath(cacheDir))
+        return {};
+
+    const QByteArray keyBytes = QCryptographicHash::hash(
+        (QStringLiteral("cutrix-audio-preview-boost-v1|") + info.absoluteFilePath()
+         + QLatin1Char('|') + QString::number(info.size())
+         + QLatin1Char('|') + QString::number(info.lastModified().toSecsSinceEpoch())
+         + QLatin1Char('|') + QString::number(sourceOffset, 'f', 3)
+         + QLatin1Char('|') + QString::number(duration, 'f', 3))
+            .toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString key = QString::fromLatin1(keyBytes);
+    const QString output = cacheDir + QLatin1Char('/') + key + QStringLiteral(".wav");
+    if (QFileInfo::exists(output) && QFileInfo(output).size() > 44)
+        return QUrl::fromLocalFile(output).toString();
+
+    {
+        QMutexLocker lock(&m_thumbnailMutex);
+        if (m_pendingAmplifiedAudio.contains(key) || m_failedAmplifiedAudio.contains(key))
+            return {};
+        m_pendingAmplifiedAudio.insert(key);
+    }
+
+    const QString seek = QString::number(sourceOffset, 'f', 3);
+    const QString segmentDuration = QString::number(duration, 'f', 3);
+    QPointer<MediaTools> guardedThis(this);
+    m_thumbnailPool.start(QRunnable::create(
+        [guardedThis, ffmpeg, path, output, key, seek, segmentDuration]() {
+            QFile::remove(output);
+            // Float WAV preserves samples above 0 dBFS. AudioOutput then attenuates
+            // this 5x-pre-amplified preview back into its documented [0, 1] range.
+            // Generate only the active clip segment so split clips do not duplicate
+            // the entire source file into the cache.
+            runTool(ffmpeg, {
+                QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+                QStringLiteral("-threads"), QStringLiteral("1"),
+                QStringLiteral("-ss"), seek,
+                QStringLiteral("-i"), path,
+                QStringLiteral("-t"), segmentDuration,
+                QStringLiteral("-map"), QStringLiteral("0:a:0"),
+                QStringLiteral("-vn"),
+                QStringLiteral("-af"), QStringLiteral("volume=5.0"),
+                QStringLiteral("-c:a"), QStringLiteral("pcm_f32le"),
+                QStringLiteral("-f"), QStringLiteral("wav"),
+                QStringLiteral("-y"), output
+            }, 300000);
+
+            const bool succeeded = QFileInfo::exists(output) && QFileInfo(output).size() > 44;
+            if (!succeeded) QFile::remove(output);
+            if (!guardedThis) return;
+
+            QMetaObject::invokeMethod(guardedThis.data(), [guardedThis, key, succeeded]() {
+                if (!guardedThis) return;
+                {
+                    QMutexLocker lock(&guardedThis->m_thumbnailMutex);
+                    guardedThis->m_pendingAmplifiedAudio.remove(key);
+                    if (!succeeded)
+                        guardedThis->m_failedAmplifiedAudio.insert(key);
+                }
+                if (succeeded) {
+                    ++guardedThis->m_thumbnailRevision;
+                    emit guardedThis->thumbnailRevisionChanged();
+                }
+            }, Qt::QueuedConnection);
+        }));
+    return {};
+}
+
 QString MediaTools::thumbnailAtSize(const QString &url, double seconds, int maxWidth)
 {
     const QString path = localPath(url);
