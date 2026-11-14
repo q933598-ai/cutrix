@@ -6360,7 +6360,14 @@ ApplicationWindow {
                                             property bool draggingClip: false
                                              readonly property bool clipSelected:
                                                  String(modelData.clipId || "") === String(root.selectedTimelineClipId || "")
-
+                                             readonly property var linkedDragPreview: {
+                                                 var preview = root.timelineGroupDragPreview
+                                                 if (!preview || String(preview.groupId || "") === ""
+                                                         || String(preview.groupId) !== String(modelData.linkGroupId || "")
+                                                         || String(preview.sourceClipId || "") === String(modelData.clipId || ""))
+                                                     return null
+                                                 return preview
+                                             }
                                             property string resizingEdge: ""
                                             property real resizeAnchorX: 0
                                             property real resizeOriginalStart: 0
@@ -6422,11 +6429,19 @@ ApplicationWindow {
                                                     : "Длина клипа изменена"
                                             } 
                                              x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
-                                               + (draggingClip ? dragOffsetX : 0)
+                                               + (draggingClip ? dragOffsetX
+                                                   : linkedDragPreview
+                                                       ? (Number(linkedDragPreview.previewStart || 0)
+                                                           - Number(modelData.start || 0)) * timelineCanvas.timelineScale : 0)
                                             width: Math.max(3, (resizingEdge !== "" ? resizePreviewDuration : root.timelineClipDuration(modelData))
                                                             * timelineCanvas.timelineScale)
                                             height: 30
-                                            y: 2 + (draggingClip ? dragOffsetY : 0)
+                                            y: 2 + (draggingClip ? dragOffsetY
+                                                : linkedDragPreview
+                                                    ? ((modelData.kind === "video"
+                                                        ? Number(linkedDragPreview.videoTrack)
+                                                        : Number(linkedDragPreview.audioTrack))
+                                                        - Number(modelData.track)) * 37 : 0)
                                             clip: true
                                             color: modelData.kind === "effect" ? theme.accent
                                                 : modelData.kind === "text" ? "#a36ac7"
@@ -6563,7 +6578,7 @@ ApplicationWindow {
                                                      }
                                                  }
                                              }
-                                            z: draggingClip ? 10 : 1
+                                            z: draggingClip || linkedDragPreview ? 10 : 1
                                             MouseArea {
                                                 anchors.fill: parent
                                                 acceptedButtons: Qt.LeftButton
@@ -6573,6 +6588,7 @@ ApplicationWindow {
                                                 onPressed: function(mouse) {
                                                     root.timelineAutoScrollDirection = 0
                                                     root.timelineDragHorizon = 0
+                                                    root.timelineGroupDragPreview = ({})
                                                     var scenePos = mapToItem(timelineCanvas, mouse.x, mouse.y)
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
@@ -6590,23 +6606,47 @@ ApplicationWindow {
                                                     if (!draggingClip && Math.abs(dx) + Math.abs(dy) > 4)
                                                         draggingClip = true
                                                     if (!draggingClip) return
-                                                    var previewX = Math.max(0, dragStartClipX + dx)
-                                                    var previewY = Math.max(-timelineClip.height - 2,
-                                                                            Math.min(timelineTrack.height + 2,
-                                                                                     dragStartClipY + dy))
                                                     var dragScale = Math.max(0.001, timelineCanvas.timelineScale)
                                                     var requestedTrack = Math.max(0, Math.min(5,
                                                         Math.floor((scenePos.y - 23.5) / 37)))
-                                                    var previewTrack = root.timelineTrackForKind(
-                                                        timelineClip.modelData.kind, requestedTrack)
-                                                    var previewStart = root.timelineCollisionSafeStart(previewTrack,
-                                                        previewX / dragScale,
-                                                        root.timelineClipDuration(timelineClip.modelData),
-                                                        String(timelineClip.modelData.clipId || ""),
-                                                        root.mediaFiles)
-                                                    // Keep the dragged clip preview collision-free too, instead of
-                                                    // letting it visually merge with a neighbor until mouse release.
-                                                    previewX = previewStart * dragScale
+                                                    var previewX = Math.max(0, dragStartClipX + dx)
+                                                    var groupId = String(timelineClip.modelData.linkGroupId || "")
+                                                    var linkedTracks = groupId !== ""
+                                                        ? root.timelineLinkedTracksForMove(timelineClip.modelData, requestedTrack)
+                                                        : null
+                                                    var previewStart = 0
+                                                    var previewTrack = 0
+                                                    var previewY = 0
+                                                    if (linkedTracks) {
+                                                        previewTrack = timelineClip.modelData.kind === "video"
+                                                            ? linkedTracks.videoTrack : linkedTracks.audioTrack
+                                                        previewStart = root.timelineLinkedCollisionSafeStart(
+                                                            linkedTracks.videoTrack, linkedTracks.audioTrack,
+                                                            previewX / dragScale,
+                                                            root.timelineClipDuration(timelineClip.modelData),
+                                                            groupId, root.mediaFiles)
+                                                        previewX = previewStart * dragScale
+                                                        previewY = 2 + (previewTrack - Number(timelineClip.modelData.track)) * 37
+                                                        root.timelineGroupDragPreview = {
+                                                            groupId: groupId,
+                                                            sourceClipId: String(timelineClip.modelData.clipId || ""),
+                                                            previewStart: previewStart,
+                                                            videoTrack: linkedTracks.videoTrack,
+                                                            audioTrack: linkedTracks.audioTrack
+                                                        }
+                                                    } else {
+                                                        previewY = Math.max(-timelineClip.height - 2,
+                                                            Math.min(timelineTrack.height + 2, dragStartClipY + dy))
+                                                        previewTrack = root.timelineTrackForKind(
+                                                            timelineClip.modelData.kind, requestedTrack)
+                                                        previewStart = root.timelineCollisionSafeStart(previewTrack,
+                                                            previewX / dragScale,
+                                                            root.timelineClipDuration(timelineClip.modelData),
+                                                            String(timelineClip.modelData.clipId || ""),
+                                                            root.mediaFiles)
+                                                        previewX = previewStart * dragScale
+                                                        root.timelineGroupDragPreview = ({})
+                                                    }
                                                     var proposedEnd = previewStart
                                                         + root.timelineClipDuration(timelineClip.modelData)
                                                     root.timelineDragHorizon = Math.max(root.timelineDragHorizon, proposedEnd)
@@ -6632,6 +6672,7 @@ ApplicationWindow {
                                                     root.timelineAutoScrollDirection = 0
                                                     dragOffsetX = 0
                                                     dragOffsetY = 0
+                                                    root.timelineGroupDragPreview = ({})
                                                     if (!wasDragging) {
                                                         root.timelineDragHorizon = 0
                                                         root.selectedTimelineClipId = String(timelineClip.modelData.clipId || "")
@@ -6649,27 +6690,61 @@ ApplicationWindow {
                                                             break
                                                         }
                                                     }
-                                                    if (movingIndex < 0) return
+                                                    if (movingIndex < 0) {
+                                                        root.timelineDragHorizon = 0
+                                                        return
+                                                    }
 
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
                                                     var desiredStart = Math.max(0, draggedX / Math.max(0.001, timelineCanvas.timelineScale))
                                                     // The track rows start at y=25 and repeat every 37 pixels.
                                                     var requestedTrack = Math.max(0, Math.min(5, Math.floor((scenePos.y - 23.5) / 37)))
-                                                     var targetTrack = root.timelineTrackForKind(updated[movingIndex].kind, requestedTrack)
                                                     var clipId = String(updated[movingIndex].clipId || "")
-                                                    var placedStart = root.timelineCollisionSafeStart(
-                                                        targetTrack, desiredStart, duration, clipId, updated)
-                                                    var didSnap = Math.abs(placedStart - desiredStart) > 0.001
-                                                    updated[movingIndex] = Object.assign({}, updated[movingIndex], {
-                                                        start: placedStart,
-                                                        track: targetTrack
-                                                    })
-                                                    if (didSnap) {
-                                                        root.statusMessage = "Клип сдвинут на свободное место"
-                                                    } else {
-                                                        root.statusMessage = targetTrack === Number(timelineClip.modelData.track)
-                                                            ? "Клип перемещён"
-                                                            : "Клип перемещён на дорожку " + ["V2", "V1", "A1", "A2", "V3"][targetTrack]
+                                                    var groupId = String(updated[movingIndex].linkGroupId || "")
+                                                    var didSnap = false
+                                                    var targetTrack = root.timelineTrackForKind(updated[movingIndex].kind, requestedTrack)
+                                                    if (groupId !== "") {
+                                                        var groupTracks = root.timelineLinkedTracksForMove(
+                                                            updated[movingIndex], requestedTrack, updated)
+                                                        var videoIndex = -1
+                                                        var audioIndex = -1
+                                                        for (var groupIndex = 0; groupIndex < updated.length; ++groupIndex) {
+                                                            if (String(updated[groupIndex].linkGroupId || "") !== groupId)
+                                                                continue
+                                                            if (updated[groupIndex].kind === "video") videoIndex = groupIndex
+                                                            else if (updated[groupIndex].kind === "audio") audioIndex = groupIndex
+                                                        }
+                                                        if (groupTracks && videoIndex >= 0 && audioIndex >= 0) {
+                                                            var linkedStart = root.timelineLinkedCollisionSafeStart(
+                                                                groupTracks.videoTrack, groupTracks.audioTrack,
+                                                                desiredStart, duration, groupId, updated)
+                                                            didSnap = Math.abs(linkedStart - desiredStart) > 0.001
+                                                            updated[videoIndex] = Object.assign({}, updated[videoIndex], {
+                                                                start: linkedStart, track: groupTracks.videoTrack
+                                                            })
+                                                            updated[audioIndex] = Object.assign({}, updated[audioIndex], {
+                                                                start: linkedStart, track: groupTracks.audioTrack
+                                                            })
+                                                            targetTrack = updated[movingIndex].kind === "video"
+                                                                ? groupTracks.videoTrack : groupTracks.audioTrack
+                                                            root.statusMessage = "Связанные видео и аудио перемещены вместе"
+                                                        } else {
+                                                            groupId = ""
+                                                        }
+                                                    }
+                                                    if (groupId === "") {
+                                                        var placedStart = root.timelineCollisionSafeStart(
+                                                            targetTrack, desiredStart, duration, clipId, updated)
+                                                        didSnap = Math.abs(placedStart - desiredStart) > 0.001
+                                                        updated[movingIndex] = Object.assign({}, updated[movingIndex], {
+                                                            start: placedStart,
+                                                            track: targetTrack
+                                                        })
+                                                        root.statusMessage = didSnap
+                                                            ? "Клип сдвинут на свободное место"
+                                                            : targetTrack === Number(timelineClip.modelData.track)
+                                                                ? "Клип перемещён"
+                                                                : "Клип перемещён на другую дорожку"
                                                     }
                                                     root.recordTimelineHistory("Переместить клип")
                                                     root.mediaFiles = updated
@@ -6677,7 +6752,6 @@ ApplicationWindow {
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
                                                 }
-                                            }
                                             // Handle right-click separately from the left-button drag/select area.
                                             // This prevents context-menu clicks from entering the clip's seek/drag handler.
                                             MouseArea {
