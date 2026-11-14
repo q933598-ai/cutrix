@@ -4486,12 +4486,12 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 from: 0; to: 500; stepSize: 1
                                 enabled: root.selectedClipCanAudio
-                                value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
+                                value: root.timelineClipProperty(root.selectedAudioControlClip(), "volume", 100)
                                 onPressedChanged: if (pressed) root.recordTimelineHistory("Настройки аудио")
                                 onMoved: root.setSelectedClipProperty("volume", value, true, false)
                             }
                             Text {
-                                text: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)) + "%"
+                                text: Math.round(root.timelineClipProperty(root.selectedAudioControlClip(), "volume", 100)) + "%"
                                 color: theme.accent; font.family: "monospace"; font.pixelSize: 10
                                 Layout.preferredWidth: 42; horizontalAlignment: Text.AlignRight
                             }
