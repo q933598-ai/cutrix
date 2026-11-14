@@ -6838,6 +6838,7 @@ ApplicationWindow {
                                                     if (root.currentProjectPath !== "")
                                                         projectStore.saveProjectMedia(root.currentProjectPath, updated)
                                                 }
+                                            }
                                             // Handle right-click separately from the left-button drag/select area.
                                             // This prevents context-menu clicks from entering the clip's seek/drag handler.
                                             MouseArea {
