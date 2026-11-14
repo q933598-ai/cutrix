@@ -6767,33 +6767,66 @@ ApplicationWindow {
                                             // the same source file is used more than once.
                                             var source = updated[sourceIndex]
                                             var requestedStart = Math.max(0, drop.x / Math.max(0.001, timelineCanvas.timelineScale))
-                                             var targetTrack = root.timelineTrackForKind(source.kind, timelineTrack.index)
-                                             var duration = root.timelineClipDuration(source)
-                                             var start = root.timelineCollisionSafeStart(
-                                                 targetTrack, requestedStart, duration, "", updated)
+                                            var targetTrack = root.timelineTrackForKind(source.kind, timelineTrack.index)
+                                            var duration = root.timelineClipDuration(source)
+                                            var separatesAudio = source.kind === "video"
+                                                && source.hasAudio === true
+                                                && (targetTrack === 0 || targetTrack === 1)
+                                            var linkGroupId = separatesAudio ? root.createTimelineClipId() : ""
+                                            var audioTrack = targetTrack === 0 ? 2 : 3
+                                            var start = separatesAudio
+                                                ? root.timelineLinkedCollisionSafeStart(targetTrack, audioTrack,
+                                                    requestedStart, duration, linkGroupId, updated)
+                                                : root.timelineCollisionSafeStart(
+                                                    targetTrack, requestedStart, duration, "", updated)
                                             var didSnap = Math.abs(start - requestedStart) > 0.001
-
+                                            var videoClipId = root.createTimelineClipId()
                                             var clip = Object.assign({}, source, {
-                                                 clipId: root.createTimelineClipId(),
-                                                 track: targetTrack,
-                                                 start: start,
-                                                 duration: duration,
-                                                 x: 0, y: 0, scale: 100,
-                                                 rotation: 0, opacity: 100, volume: 100,
-                                                 fontSize: 30, textColor: "#ffffff"
-                                             })
-                                             updated.push(clip)
-                                             root.selectedTimelineClipId = String(clip.clipId)
-                                             root.selectedMedia = String(clip.name || "")
-                                              root.recordTimelineHistory("Добавить клип на таймлайн")
-                                             root.mediaFiles = updated
+                                                clipId: videoClipId,
+                                                linkGroupId: linkGroupId,
+                                                audioSeparated: separatesAudio,
+                                                audioMuted: separatesAudio ? true : Boolean(source.audioMuted),
+                                                track: targetTrack,
+                                                start: start,
+                                                duration: duration,
+                                                x: 0, y: 0, scale: 100,
+                                                rotation: 0, opacity: 100, volume: 100,
+                                                fontSize: 30, textColor: "#ffffff"
+                                            })
+                                            updated.push(clip)
+
+                                            if (separatesAudio) {
+                                                var audioClip = Object.assign({}, source, {
+                                                    clipId: root.createTimelineClipId(),
+                                                    linkGroupId: linkGroupId,
+                                                    audioSeparated: true,
+                                                    name: "♫ " + String(source.name || "Аудио"),
+                                                    kind: "audio",
+                                                    hasAudio: true,
+                                                    track: audioTrack,
+                                                    start: start,
+                                                    duration: duration,
+                                                    sourceOffset: Math.max(0, Number(source.sourceOffset || 0)),
+                                                    volume: 100,
+                                                    audioMuted: false
+                                                })
+                                                updated.push(audioClip)
+                                            }
+
+                                            root.selectedTimelineClipId = String(clip.clipId)
+                                            root.selectedMedia = String(clip.name || "")
+                                            root.recordTimelineHistory("Добавить клип на таймлайн")
+                                            root.mediaFiles = updated
                                             root.saveTimelineMedia(updated)
                                             root.timelinePosition = start
-                                             root.updateTimelinePreview(start)
-                                            var actualTrackName = ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ"][targetTrack]
-                                             root.statusMessage = didSnap
-                                                 ? "Клип размещён рядом на " + actualTrackName
-                                                 : "Клип добавлен на " + actualTrackName
+                                            root.updateTimelinePreview(start)
+                                            var actualTrackName = ["V2 · ВИДЕО", "V1 · ВИДЕО", "A1 · АУДИО", "A2 · АУДИО", "V3 · ТЕКСТ", "FX · РАЗМЫТИЕ"][targetTrack]
+                                            root.statusMessage = separatesAudio
+                                                ? "Видео и звук добавлены связанными на V" + (targetTrack === 0 ? "2" : "1")
+                                                    + " + A" + (audioTrack === 2 ? "1" : "2")
+                                                : didSnap
+                                                    ? "Клип размещён рядом на " + actualTrackName
+                                                    : "Клип добавлен на " + actualTrackName
                                             drop.acceptProposedAction()
                                         }
                                     }
