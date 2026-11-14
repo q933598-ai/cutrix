@@ -155,7 +155,7 @@ QString MediaTools::waveformAt(const QString &url, double sourceOffset, double d
         return {};
 
     const QByteArray keyBytes = QCryptographicHash::hash(
-        (QStringLiteral("cutrix-waveform-v2|") + info.absoluteFilePath()
+        (QStringLiteral("cutrix-waveform-v3|") + info.absoluteFilePath()
          + QLatin1Char('|') + QString::number(info.size())
          + QLatin1Char('|') + QString::number(info.lastModified().toSecsSinceEpoch())
          + QLatin1Char('|') + QString::number(sourceOffset, 'f', 3)
@@ -181,7 +181,10 @@ QString MediaTools::waveformAt(const QString &url, double sourceOffset, double d
             QFile::remove(output);
             const QString filter = QStringLiteral(
                 "aformat=channel_layouts=mono,"
-                "showwavespic=s=1400x128:colors=0x9ccfd8:scale=sqrt:draw=full,"
+                // Boost only the visualization, never the clip's playback level.
+                // A cbrt curve makes quiet speech and breaths visible while true silence remains flat.
+                "volume=8,"
+                "showwavespic=s=1400x180:colors=0xc6f3ff:scale=cbrt:draw=full,"
                 "format=rgba,colorkey=black:0.02:0.0");
             runTool(ffmpeg, {
                 QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
