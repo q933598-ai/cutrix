@@ -37,6 +37,9 @@ public:
     Q_INVOKABLE QString previewFrameAt(const QString &url, double seconds);
     // Generate a cached audio waveform for a clip segment without blocking the QML UI.
     Q_INVOKABLE QString waveformAt(const QString &url, double sourceOffset, double duration);
+    // Build a cached float-WAV preview with 5x gain for clips set above 100%.
+    // Returns an empty string while generation is pending or when the source has no audio.
+    Q_INVOKABLE QString amplifiedAudioPreview(const QString &url, double sourceOffset, double duration);
 
 signals:
     void thumbnailRevisionChanged();
@@ -54,6 +57,8 @@ private:
     QSet<QString> m_failedThumbnails;
     QSet<QString> m_pendingWaveforms;
     QSet<QString> m_failedWaveforms;
+    QSet<QString> m_pendingAmplifiedAudio;
+    QSet<QString> m_failedAmplifiedAudio;
     int m_thumbnailRevision = 0;
     // Limit background ffmpeg thumbnail jobs so importing many clips does not
     // saturate every CPU core while the editor is open.
