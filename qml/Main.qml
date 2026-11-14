@@ -127,6 +127,9 @@ ApplicationWindow {
     // Timeline zoom is measured in screen pixels per second. The available
     // editing horizon starts at 20 minutes and doubles as clips move further out.
     property real timelineZoom: 4
+    // Vertical timeline zoom: one shared lane height keeps labels, clips and hit targets aligned.
+    property int timelineLaneHeight: 52
+    readonly property int timelineTrackStride: timelineLaneHeight + 3
     property real timelineDragHorizon: 0
     // Temporary group preview keeps paired video/audio blocks visually locked while dragging.
     property var timelineGroupDragPreview: ({})
@@ -6328,8 +6331,8 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 230
-            Layout.minimumHeight: 230
+            Layout.preferredHeight: 280
+            Layout.minimumHeight: 250
             color: theme.panel
             border.color: theme.border
             ColumnLayout {
@@ -6404,6 +6407,41 @@ ApplicationWindow {
                         palette.buttonText: theme.accent
                         background: Rectangle { color: theme.background; border.color: theme.border; radius: 2 }
                     }
+                    RowLayout {
+                        spacing: 3
+                        Text {
+                            text: "ДОРОЖКИ"
+                            color: theme.muted
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        Button {
+                            text: "−"
+                            enabled: root.timelineLaneHeight > 40
+                            Layout.preferredWidth: 26
+                            Layout.preferredHeight: 26
+                            onClicked: root.timelineLaneHeight = Math.max(40, root.timelineLaneHeight - 6)
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                        }
+                        Text {
+                            text: root.timelineLaneHeight + " px"
+                            Layout.preferredWidth: 42
+                            horizontalAlignment: Text.AlignHCenter
+                            color: theme.accent
+                            font.family: "monospace"
+                            font.pixelSize: 10 * root.uiFontScale / 100
+                        }
+                        Button {
+                            text: "+"
+                            enabled: root.timelineLaneHeight < 82
+                            Layout.preferredWidth: 26
+                            Layout.preferredHeight: 26
+                            onClicked: root.timelineLaneHeight = Math.min(82, root.timelineLaneHeight + 6)
+                            palette.buttonText: theme.text
+                            background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
+                        }
+                    }
                     Item { Layout.fillWidth: true }
                     Text {
                         text: root.formatTime(root.timelinePosition) + " / " + root.formatTime(root.timelineDuration)
@@ -6438,7 +6476,7 @@ ApplicationWindow {
                                 delegate: Rectangle {
                                     required property string modelData
                                     width: parent.width
-                                    height: 34
+                                    height: root.timelineLaneHeight
                                     color: theme.panelAlt
                                     border.color: theme.border
                                     Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: modelData; color: theme.text; font.family: "monospace"; font.pixelSize: (12 * root.uiFontScale / 100) }
@@ -6493,7 +6531,7 @@ ApplicationWindow {
                             id: timelineCanvas
                             width: Math.max(timelineViewport.width,
                                 root.timelineWorkspaceDuration * timelineScale)
-                            height: Math.max(timelineViewport.height, 22 + 6 * 37 + 8)
+                            height: Math.max(timelineViewport.height, 22 + 6 * root.timelineTrackStride + 8)
                             clip: true
                             // One stable scale is shared by ruler, clip geometry,
                             // dragging, resizing, drop positions and the playhead.
@@ -6537,7 +6575,7 @@ ApplicationWindow {
                                     required property int index
                                     property bool dropHover: false
                                     width: parent.width
-                                    height: 34
+                                    height: root.timelineLaneHeight
                                     Rectangle {
                                         anchors.fill: parent
                                         color: timelineTrack.dropHover ? theme.accent2 : (index % 2 === 0 ? theme.panel : theme.background)
@@ -6666,13 +6704,13 @@ ApplicationWindow {
                                                            - Number(modelData.start || 0)) * timelineCanvas.timelineScale : 0)
                                             width: Math.max(3, (resizingEdge !== "" ? resizePreviewDuration : root.timelineClipDuration(modelData))
                                                             * timelineCanvas.timelineScale)
-                                            height: 30
+                                            height: Math.max(3, root.timelineLaneHeight - 4)
                                             y: 2 + (draggingClip ? dragOffsetY
                                                 : linkedDragPreview
                                                     ? ((modelData.kind === "video"
                                                         ? Number(linkedDragPreview.videoTrack)
                                                         : Number(linkedDragPreview.audioTrack))
-                                                        - Number(modelData.track)) * 37 : 0)
+                                                        - Number(modelData.track)) * root.timelineTrackStride : 0)
                                             clip: true
                                             color: modelData.kind === "effect" ? theme.accent
                                                 : modelData.kind === "text" ? "#a36ac7"
@@ -6718,7 +6756,7 @@ ApplicationWindow {
                                                     ? 3 : parent.height - height - 2
                                                 width: Math.max(0, parent.width - 6)
                                                 height: timelineClip.modelData.kind === "audio"
-                                                    ? Math.max(1, parent.height - 6) : 10
+                                                    ? Math.max(1, parent.height - 6) : 16
                                                 source: {
                                                     // Refresh this source after FFmpeg finishes the async waveform job.
                                                     var revision = mediaTools.thumbnailRevision
@@ -6841,7 +6879,7 @@ ApplicationWindow {
                                                     if (!draggingClip) return
                                                     var dragScale = Math.max(0.001, timelineCanvas.timelineScale)
                                                     var requestedTrack = Math.max(0, Math.min(5,
-                                                        Math.floor((scenePos.y - 23.5) / 37)))
+                                                        Math.floor((scenePos.y - 23.5) / root.timelineTrackStride)))
                                                     var previewX = Math.max(0, dragStartClipX + dx)
                                                     var groupId = String(timelineClip.modelData.linkGroupId || "")
                                                     var linkedTracks = groupId !== ""
@@ -6859,7 +6897,7 @@ ApplicationWindow {
                                                             root.timelineClipDuration(timelineClip.modelData),
                                                             groupId, root.mediaFiles)
                                                         previewX = previewStart * dragScale
-                                                        previewY = 2 + (previewTrack - Number(timelineClip.modelData.track)) * 37
+                                                        previewY = 2 + (previewTrack - Number(timelineClip.modelData.track)) * root.timelineTrackStride
                                                         root.timelineGroupDragPreview = {
                                                             groupId: groupId,
                                                             sourceClipId: String(timelineClip.modelData.clipId || ""),
@@ -6930,8 +6968,9 @@ ApplicationWindow {
 
                                                     var duration = root.timelineClipDuration(updated[movingIndex])
                                                     var desiredStart = Math.max(0, draggedX / Math.max(0.001, timelineCanvas.timelineScale))
-                                                    // The track rows start at y=25 and repeat every 37 pixels.
-                                                    var requestedTrack = Math.max(0, Math.min(5, Math.floor((scenePos.y - 23.5) / 37)))
+                                                    // Track rows start below the 22 px ruler and repeat at the current lane stride.
+                                                    var requestedTrack = Math.max(0, Math.min(5,
+                                                        Math.floor((scenePos.y - 23.5) / root.timelineTrackStride)))
                                                     var clipId = String(updated[movingIndex].clipId || "")
                                                     var groupId = String(updated[movingIndex].linkGroupId || "")
                                                     var didSnap = false
