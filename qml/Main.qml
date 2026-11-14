@@ -6045,7 +6045,7 @@ ApplicationWindow {
                         CutrixSlider {
                             id: opacitySlider
                             Layout.fillWidth: true
-                            from: 0; to: 500; stepSize: 5
+                            from: 0; to: 100; stepSize: 5
                             value: root.timelineClipProperty(root.selectedTimelineClip, "opacity", 100)
                             enabled: root.selectedClipCanTransform
                                 && root.selectedTimelineClip.kind !== "effect"
@@ -6089,7 +6089,7 @@ ApplicationWindow {
                         CutrixSlider {
                             id: volumeSlider
                             Layout.fillWidth: true
-                            from: 0; to: 100; stepSize: 5
+                            from: 0; to: 500; stepSize: 5
                             value: root.timelineClipProperty(root.selectedAudioControlClip(), "volume", 100)
                             enabled: !!root.selectedTimelineClip
                                 && (root.selectedTimelineClip.kind === "audio" || root.selectedTimelineClip.kind === "video")
