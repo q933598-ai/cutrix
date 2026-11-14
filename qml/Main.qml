@@ -324,6 +324,22 @@ ApplicationWindow {
     function setSelectedClipProperties(changes, label, persist) {
         var id = String(selectedTimelineClipId || "")
         if (id === "" || !changes) return
+        var audioKeys = ["volume", "audioPan", "audioFadeIn", "audioFadeOut",
+            "audioMuted", "audioNormalize", "audioCompressor", "audioDenoise",
+            "audioLimiter", "eq31", "eq62", "eq125", "eq250", "eq500",
+            "eq1000", "eq2000", "eq4000", "eq8000", "eq16000"]
+        var changeKeys = Object.keys(changes)
+        var audioOnly = changeKeys.length > 0
+        for (var keyIndex = 0; keyIndex < changeKeys.length; ++keyIndex) {
+            if (audioKeys.indexOf(changeKeys[keyIndex]) < 0) {
+                audioOnly = false
+                break
+            }
+        }
+        if (audioOnly) {
+            var audioTarget = selectedAudioControlClip()
+            if (audioTarget) id = String(audioTarget.clipId || "")
+        }
         var updated = mediaFiles.slice()
         for (var i = 0; i < updated.length; ++i) {
             if (Number(updated[i].track) < 0 || String(updated[i].clipId || "") !== id)
@@ -786,13 +802,18 @@ ApplicationWindow {
         return Math.max(0, candidate)
     }
 
-    function selectedAudioIsMuted() {
+    function selectedAudioControlClip() {
         var clip = selectedTimelineClip
-        if (!clip) return false
+        if (!clip) return null
         var peer = timelineLinkedPeer(clip)
-        if (clip.kind === "video" && peer)
-            return Boolean(peer.audioMuted)
-        return Boolean(clip.audioMuted)
+        if (clip.kind === "video" && peer && peer.kind === "audio")
+            return peer
+        return clip
+    }
+
+    function selectedAudioIsMuted() {
+        var clip = selectedAudioControlClip()
+        return clip ? Boolean(clip.audioMuted) : false
     }
 
     function setSelectedAudioMuted(muted) {
@@ -815,8 +836,10 @@ ApplicationWindow {
     }
 
     function timelineClipProperty(item, key, fallback) {
+        var audioTarget = selectedAudioControlClip()
         if (item && String(item.clipId || "") !== ""
-                && String(item.clipId) === String(selectedTimelineClipId || "")
+                && (String(item.clipId) === String(selectedTimelineClipId || "")
+                    || (audioTarget && String(item.clipId) === String(audioTarget.clipId || "")))
                 && transformPreviewOverride && transformPreviewOverride[key] !== undefined) {
             var previewValue = Number(transformPreviewOverride[key])
             if (isFinite(previewValue)) return previewValue
@@ -848,7 +871,9 @@ ApplicationWindow {
 
     function timelineAnimatedValue(item, key, seconds, fallback) {
         if (!item) return fallback
-        if (String(item.clipId || "") === String(selectedTimelineClipId || "")
+        var audioTarget = selectedAudioControlClip()
+        if ((String(item.clipId || "") === String(selectedTimelineClipId || "")
+                || (audioTarget && String(item.clipId) === String(audioTarget.clipId || "")))
                 && transformPreviewOverride && transformPreviewOverride[key] !== undefined) {
             var overrideValue = Number(transformPreviewOverride[key])
             if (isFinite(overrideValue)) return overrideValue
@@ -1409,11 +1434,19 @@ ApplicationWindow {
     }
 
     function setSelectedClipProperty(key, value, persist, shouldRecordHistory) {
-        var id = String(selectedTimelineClipId || "")
+        var targetClip = selectedTimelineClip
+        if (!targetClip) return
+        var audioKeys = ["volume", "audioPan", "audioFadeIn", "audioFadeOut",
+            "audioMuted", "audioNormalize", "audioCompressor", "audioDenoise",
+            "audioLimiter", "eq31", "eq62", "eq125", "eq250", "eq500",
+            "eq1000", "eq2000", "eq4000", "eq8000", "eq16000"]
+        if (audioKeys.indexOf(key) >= 0)
+            targetClip = selectedAudioControlClip()
+        var id = String(targetClip ? targetClip.clipId : "")
         if (id === "") return
-        if (selectedTimelineClip && selectedClipCanAnimate
+        if (targetClip === selectedTimelineClip && selectedClipCanAnimate
                 && ["x", "y", "scale", "rotation", "opacity", "volume", "blur"].indexOf(key) >= 0
-                && timelineKeyframesFor(selectedTimelineClip, key).length > 0) {
+                && timelineKeyframesFor(targetClip, key).length > 0) {
             setKeyframeValueAtPlayhead(key, value)
             return
         }
@@ -1447,7 +1480,13 @@ ApplicationWindow {
                 || transformPreviewOverride[key] === undefined)
             return
         var value = transformPreviewOverride[key]
-        if (selectedTimelineClip[key] !== value) {
+        var audioKeys = ["volume", "audioPan", "audioFadeIn", "audioFadeOut",
+            "audioMuted", "audioNormalize", "audioCompressor", "audioDenoise",
+            "audioLimiter", "eq31", "eq62", "eq125", "eq250", "eq500",
+            "eq1000", "eq2000", "eq4000", "eq8000", "eq16000"]
+        var targetClip = audioKeys.indexOf(key) >= 0
+            ? selectedAudioControlClip() : selectedTimelineClip
+        if (targetClip && targetClip[key] !== value) {
             var historyLabel = key === "blur" ? "Размытие клипа"
                 : key === "opacity" ? "Изменить прозрачность"
                 : "Цветокоррекция клипа"
@@ -5894,7 +5933,7 @@ ApplicationWindow {
                             id: volumeSlider
                             Layout.fillWidth: true
                             from: 0; to: 100; stepSize: 5
-                            value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
+                            value: root.timelineClipProperty(root.selectedAudioControlClip(), "volume", 100)
                             enabled: !!root.selectedTimelineClip
                                 && (root.selectedTimelineClip.kind === "audio" || root.selectedTimelineClip.kind === "video")
                             onPressedChanged: {
