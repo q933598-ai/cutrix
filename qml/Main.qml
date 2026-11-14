@@ -1437,6 +1437,34 @@ ApplicationWindow {
             targetClip = selectedAudioControlClip()
         var id = String(targetClip ? targetClip.clipId : "")
         if (id === "") return
+        if (key === "reverse" && selectedTimelineClip
+                && selectedTimelineClip.kind === "video") {
+            var linkedAudio = timelineLinkedPeer(selectedTimelineClip)
+            if (linkedAudio && linkedAudio.kind === "audio") {
+                var linkedGroupId = String(selectedTimelineClip.linkGroupId || "")
+                var reverseUpdated = mediaFiles.slice()
+                var reverseChanged = false
+                for (var reverseIndex = 0; reverseIndex < reverseUpdated.length; ++reverseIndex) {
+                    if (String(reverseUpdated[reverseIndex].linkGroupId || "") === linkedGroupId) {
+                        if (Boolean(reverseUpdated[reverseIndex].reverse) !== Boolean(value)) {
+                            reverseUpdated[reverseIndex] = Object.assign({}, reverseUpdated[reverseIndex], {
+                                reverse: Boolean(value)
+                            })
+                            reverseChanged = true
+                        }
+                    }
+                }
+                if (!reverseChanged) return
+                if (shouldRecordHistory !== false)
+                    recordTimelineHistory("Изменить реверс связанного клипа")
+                mediaFiles = reverseUpdated
+                if (persist !== false) {
+                    saveTimelineMedia(reverseUpdated)
+                    statusMessage = "Реверс применён к видео и связанному звуку"
+                }
+                return
+            }
+        }
         if (targetClip === selectedTimelineClip && selectedClipCanAnimate
                 && ["x", "y", "scale", "rotation", "opacity", "volume", "blur"].indexOf(key) >= 0
                 && timelineKeyframesFor(targetClip, key).length > 0) {
