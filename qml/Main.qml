@@ -790,16 +790,9 @@ ApplicationWindow {
         var excluded = clips.filter(function(item) {
             return String(item.linkGroupId || "") !== String(groupId || "")
         })
-        var candidate = Math.max(0, Number(desiredStart) || 0)
-        for (var attempt = 0; attempt < 12; ++attempt) {
-            var videoStart = timelineCollisionSafeStart(videoTrack, candidate, duration, "", excluded)
-            var audioStart = timelineCollisionSafeStart(audioTrack, candidate, duration, "", excluded)
-            var nextStart = Math.max(videoStart, audioStart)
-            if (Math.abs(nextStart - candidate) < 0.001)
-                return nextStart
-            candidate = nextStart
-        }
-        return Math.max(0, candidate)
+        // Video clips must not overlap on their video lane. Audio lanes are mix
+        // buses, so linked sound is allowed to overlap background music there.
+        return timelineCollisionSafeStart(videoTrack, desiredStart, duration, "", excluded)
     }
 
     function selectedAudioControlClip() {
@@ -6441,15 +6434,16 @@ ApplicationWindow {
                                                 var delta = (sceneX - resizeAnchorX) / Math.max(0.001, timelineCanvas.timelineScale)
                                                 var maxDuration = 1000000
                                                 var linkedPeer = root.timelineLinkedPeer(modelData)
-                                                var peerTrack = linkedPeer ? Number(linkedPeer.track) : -1
                                                 var groupId = String(modelData.linkGroupId || "")
+                                                var collisionTrack = linkedPeer
+                                                    ? (modelData.kind === "video" ? Number(modelData.track) : Number(linkedPeer.track))
+                                                    : Number(modelData.track)
                                                 for (var i = 0; i < root.mediaFiles.length; ++i) {
                                                     var other = root.mediaFiles[i]
                                                     if (String(other.linkGroupId || "") === groupId && groupId !== "")
                                                         continue
                                                     if (String(other.clipId || "") === String(modelData.clipId || "")
-                                                            || (Number(other.track) !== Number(modelData.track)
-                                                                && Number(other.track) !== peerTrack))
+                                                            || Number(other.track) !== collisionTrack)
                                                         continue
                                                     var otherStart = Number(other.start || 0)
                                                     // Right-edge resize may never cross the next clip's start.
@@ -6591,7 +6585,8 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 5
                                                 anchors.rightMargin: root.timelineClipHasAnimation(modelData) ? 36 : 3
-                                                text: (root.timelineClipHasAnimation(modelData) ? "◆ " : "")
+                                                text: (modelData.linkGroupId ? "↔ " : "")
+                                                    + (root.timelineClipHasAnimation(modelData) ? "◆ " : "")
                                                     + (modelData.kind === "text" ? "T · " + modelData.text
                                                         : modelData.kind === "effect" ? "FX · Размытие · " + Math.round(Number(modelData.blur || 0)) + "%"
                                                         : modelData.name)
