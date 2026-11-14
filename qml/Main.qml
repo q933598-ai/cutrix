@@ -2379,6 +2379,68 @@ ApplicationWindow {
     readonly property var theme: palettes[currentTheme] || palettes["Tokyo Night"]
 
     function refreshProjects() { recentProjects = projectStore.recentProjects() }
+
+    // Add a linked audio-lane clip to older projects that only stored the
+    // original video clip. Existing linked pairs are left untouched.
+    function ensureTimelineVideoAudioPairs(items) {
+        var updated = root.cloneTimelineItems(items)
+        var originalCount = updated.length
+        for (var i = 0; i < originalCount; ++i) {
+            var video = updated[i]
+            var videoTrack = Number(video.track)
+            if (video.kind !== "video" || !isFinite(videoTrack)
+                    || videoTrack < 0 || videoTrack > 1 || video.hasAudio === false)
+                continue
+
+            var groupId = String(video.linkGroupId || "")
+            var audioPeerIndex = -1
+            if (groupId !== "") {
+                for (var j = 0; j < updated.length; ++j) {
+                    if (j !== i && updated[j].kind === "audio"
+                            && String(updated[j].linkGroupId || "") === groupId) {
+                        audioPeerIndex = j
+                        break
+                    }
+                }
+            }
+            if (audioPeerIndex >= 0) {
+                if (!video.audioSeparated || !video.audioMuted) {
+                    updated[i] = Object.assign({}, video, {
+                        audioSeparated: true,
+                        audioMuted: true
+                    })
+                }
+                continue
+            }
+
+            if (groupId === "") groupId = root.createTimelineClipId()
+            var wasMuted = Boolean(video.audioMuted)
+            video = Object.assign({}, video, {
+                linkGroupId: groupId,
+                audioSeparated: true,
+                audioMuted: true
+            })
+            updated[i] = video
+
+            var audioClip = Object.assign({}, video, {
+                clipId: root.createTimelineClipId(),
+                linkGroupId: groupId,
+                audioSeparated: true,
+                name: "♫ " + String(video.name || "Аудио"),
+                kind: "audio",
+                hasAudio: true,
+                track: videoTrack === 0 ? 2 : 3,
+                start: Math.max(0, Number(video.start || 0)),
+                duration: root.timelineClipDuration(video),
+                sourceOffset: Math.max(0, Number(video.sourceOffset || 0)),
+                volume: Number(video.volume === undefined ? 100 : video.volume),
+                audioMuted: wasMuted
+            })
+            updated.push(audioClip)
+        }
+        return updated
+    }
+
     function openProject(path, name) {
         if (!projectStore.openProject(path)) { statusMessage = projectStore.lastError(); return }
         currentProjectPath = path
@@ -2407,6 +2469,7 @@ ApplicationWindow {
                 delete item.hasAudio
             return item
         })
+        savedMedia = root.ensureTimelineVideoAudioPairs(savedMedia)
         mediaFiles = normalizeTimelineMedia(savedMedia)
         if (JSON.stringify(mediaFiles) !== JSON.stringify(savedMedia))
             projectStore.saveProjectMedia(path, mediaFiles)
