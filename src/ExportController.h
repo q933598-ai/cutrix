@@ -57,6 +57,7 @@ private:
         double audioFadeIn = 0.0;
         double audioFadeOut = 0.0;
         bool audioMuted = false;
+        bool audioSeparated = false;
         bool audioNormalize = false;
         bool audioCompressor = false;
         bool audioDenoise = false;
