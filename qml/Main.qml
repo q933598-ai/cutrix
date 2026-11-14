@@ -6440,10 +6440,16 @@ ApplicationWindow {
                                             function updateResize(sceneX) {
                                                 var delta = (sceneX - resizeAnchorX) / Math.max(0.001, timelineCanvas.timelineScale)
                                                 var maxDuration = 1000000
+                                                var linkedPeer = root.timelineLinkedPeer(modelData)
+                                                var peerTrack = linkedPeer ? Number(linkedPeer.track) : -1
+                                                var groupId = String(modelData.linkGroupId || "")
                                                 for (var i = 0; i < root.mediaFiles.length; ++i) {
                                                     var other = root.mediaFiles[i]
+                                                    if (String(other.linkGroupId || "") === groupId && groupId !== "")
+                                                        continue
                                                     if (String(other.clipId || "") === String(modelData.clipId || "")
-                                                            || Number(other.track) !== Number(modelData.track))
+                                                            || (Number(other.track) !== Number(modelData.track)
+                                                                && Number(other.track) !== peerTrack))
                                                         continue
                                                     var otherStart = Number(other.start || 0)
                                                     // Right-edge resize may never cross the next clip's start.
@@ -6460,29 +6466,52 @@ ApplicationWindow {
                                                 if (resizingEdge === "") return
                                                 var newDuration = resizePreviewDuration
                                                 var clipId = String(modelData.clipId || "")
+                                                var groupId = String(modelData.linkGroupId || "")
                                                 resizingEdge = ""
                                                 root.timelineAutoScrollDirection = 0
-                                                // Final guard: also relocate clips from older projects if
-                                                // the resized interval would collide with something already there.
-                                                var newStart = root.findFreeTimelineStart(Number(modelData.track),
-                                                    Number(modelData.start || 0), newDuration, clipId)
-                                                var didRelocate = Math.abs(newStart - Number(modelData.start || 0)) > 0.001
                                                 var updated = root.mediaFiles.slice()
-                                                for (var i = 0; i < updated.length; ++i) {
-                                                    if (String(updated[i].clipId || "") === clipId) {
-                                                        updated[i] = Object.assign({}, updated[i], {
-                                                            start: newStart, duration: newDuration
-                                                        })
-                                                        break
+                                                var newStart = Number(modelData.start || 0)
+                                                var didRelocate = false
+                                                if (groupId !== "") {
+                                                    var linkedTracks = root.timelineLinkedTracksForMove(
+                                                        modelData, Number(modelData.track), updated)
+                                                    if (linkedTracks) {
+                                                        newStart = root.timelineLinkedCollisionSafeStart(
+                                                            linkedTracks.videoTrack, linkedTracks.audioTrack,
+                                                            newStart, newDuration, groupId, updated)
+                                                        didRelocate = Math.abs(newStart - Number(modelData.start || 0)) > 0.001
+                                                        for (var linkedIndex = 0; linkedIndex < updated.length; ++linkedIndex) {
+                                                            if (String(updated[linkedIndex].linkGroupId || "") === groupId) {
+                                                                var linkedTrack = updated[linkedIndex].kind === "video"
+                                                                    ? linkedTracks.videoTrack : linkedTracks.audioTrack
+                                                                updated[linkedIndex] = Object.assign({}, updated[linkedIndex], {
+                                                                    start: newStart, duration: newDuration, track: linkedTrack
+                                                                })
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    newStart = root.findFreeTimelineStart(Number(modelData.track),
+                                                        Number(modelData.start || 0), newDuration, clipId)
+                                                    didRelocate = Math.abs(newStart - Number(modelData.start || 0)) > 0.001
+                                                    for (var i = 0; i < updated.length; ++i) {
+                                                        if (String(updated[i].clipId || "") === clipId) {
+                                                            updated[i] = Object.assign({}, updated[i], {
+                                                                start: newStart, duration: newDuration
+                                                            })
+                                                            break
+                                                        }
                                                     }
                                                 }
                                                 root.recordTimelineHistory("Изменить длительность клипа")
                                                 root.mediaFiles = updated
                                                 root.timelineDragHorizon = 0
                                                 root.saveTimelineMedia(updated)
-                                                root.statusMessage = didRelocate
-                                                    ? "Длительность изменена; клип сдвинут, чтобы избежать наложения"
-                                                    : "Длина клипа изменена"
+                                                root.statusMessage = groupId !== ""
+                                                    ? "Длительность видео и аудио изменена вместе"
+                                                    : didRelocate
+                                                        ? "Длительность изменена; клип сдвинут, чтобы избежать наложения"
+                                                        : "Длина клипа изменена"
                                             } 
                                              x: Math.max(0, Number(modelData.start || 0) * timelineCanvas.timelineScale)
                                                + (draggingClip ? dragOffsetX
