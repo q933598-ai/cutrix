@@ -1736,6 +1736,15 @@ ApplicationWindow {
             var clip = result[index]
             var start = Number(clip.start)
             var duration = timelineClipDuration(clip)
+            // A1/A2 are mixer lanes: overlapping audio is intentional and must
+            // survive project reload without being auto-shifted out of sync.
+            if (Number(clip.track) === 2 || Number(clip.track) === 3) {
+                clip.start = start
+                clip.duration = duration
+                result[index] = clip
+                placed.push(clip)
+                continue
+            }
             var blockers = placed.filter(function(other) {
                 return Number(other.track) === Number(clip.track)
             })
@@ -1761,6 +1770,8 @@ ApplicationWindow {
         var start = isFinite(requested) ? Math.max(0, requested) : 0
         var clipDuration = Number(duration)
         if (!isFinite(clipDuration) || clipDuration <= 0) clipDuration = 36
+        // Audio lanes mix clips on top of one another instead of forcing gaps.
+        if (Number(track) === 2 || Number(track) === 3) return start
 
         var blockers = []
         for (var i = 0; i < mediaFiles.length; ++i) {
@@ -1843,6 +1854,8 @@ ApplicationWindow {
         var start = isFinite(startValue) ? Math.max(0, startValue) : 0
         var length = Number(duration)
         if (!isFinite(length) || length <= 0) length = 36
+        // Audio lanes are mixer lanes, so overlapping audio clips are valid.
+        if (Number(track) === 2 || Number(track) === 3) return start
         var blockers = []
         for (var i = 0; i < clips.length; ++i) {
             var item = clips[i]
@@ -6463,10 +6476,13 @@ ApplicationWindow {
                                                 var maxDuration = 1000000
                                                 var linkedPeer = root.timelineLinkedPeer(modelData)
                                                 var groupId = String(modelData.linkGroupId || "")
+                                                var audioMixLane = !linkedPeer
+                                                    && (Number(modelData.track) === 2 || Number(modelData.track) === 3)
                                                 var collisionTrack = linkedPeer
                                                     ? (modelData.kind === "video" ? Number(modelData.track) : Number(linkedPeer.track))
                                                     : Number(modelData.track)
                                                 for (var i = 0; i < root.mediaFiles.length; ++i) {
+                                                    if (audioMixLane) break
                                                     var other = root.mediaFiles[i]
                                                     if (String(other.linkGroupId || "") === groupId && groupId !== "")
                                                         continue
