@@ -128,6 +128,8 @@ ApplicationWindow {
     // editing horizon starts at 20 minutes and doubles as clips move further out.
     property real timelineZoom: 4
     property real timelineDragHorizon: 0
+    // Temporary group preview keeps paired video/audio blocks visually locked while dragging.
+    property var timelineGroupDragPreview: ({})
     // Kept between scroll gestures: reaching the right edge should reveal
     // another block of workspace even when the user isn't dragging a clip.
     property real timelineWorkspaceDemand: 0
@@ -732,6 +734,84 @@ ApplicationWindow {
         if (kind === "text") return 4
         if (kind === "video" && (track === 2 || track === 3)) return track
         return track === 0 || track === 1 ? track : 1
+    }
+
+    function timelineLinkedPeer(item, items) {
+        if (!item || !String(item.linkGroupId || "")) return null
+        var clips = items || mediaFiles
+        var group = String(item.linkGroupId)
+        for (var i = 0; i < clips.length; ++i) {
+            var other = clips[i]
+            if (String(other.linkGroupId || "") !== group
+                    || String(other.clipId || "") === String(item.clipId || ""))
+                continue
+            if ((item.kind === "video" && other.kind === "audio")
+                    || (item.kind === "audio" && other.kind === "video"))
+                return other
+        }
+        return null
+    }
+
+    function timelineLinkedTracksForMove(item, requestedTrack, items) {
+        var peer = timelineLinkedPeer(item, items)
+        if (!peer) return null
+        var videoTrack = Number(item.kind === "video" ? item.track : peer.track)
+        var audioTrack = Number(item.kind === "audio" ? item.track : peer.track)
+        var requested = Math.max(0, Math.min(5, Number(requestedTrack)))
+        if (requested === 0 || requested === 1) {
+            videoTrack = requested
+            audioTrack = requested === 0 ? 2 : 3
+        } else if (requested === 2 || requested === 3) {
+            audioTrack = requested
+            videoTrack = requested === 2 ? 0 : 1
+        }
+        return { videoTrack: videoTrack, audioTrack: audioTrack }
+    }
+
+    function timelineLinkedCollisionSafeStart(videoTrack, audioTrack, desiredStart,
+                                               duration, groupId, items) {
+        var clips = items || mediaFiles
+        var excluded = clips.filter(function(item) {
+            return String(item.linkGroupId || "") !== String(groupId || "")
+        })
+        var candidate = Math.max(0, Number(desiredStart) || 0)
+        for (var attempt = 0; attempt < 12; ++attempt) {
+            var videoStart = timelineCollisionSafeStart(videoTrack, candidate, duration, "", excluded)
+            var audioStart = timelineCollisionSafeStart(audioTrack, candidate, duration, "", excluded)
+            var nextStart = Math.max(videoStart, audioStart)
+            if (Math.abs(nextStart - candidate) < 0.001)
+                return nextStart
+            candidate = nextStart
+        }
+        return Math.max(0, candidate)
+    }
+
+    function selectedAudioIsMuted() {
+        var clip = selectedTimelineClip
+        if (!clip) return false
+        var peer = timelineLinkedPeer(clip)
+        if (clip.kind === "video" && peer)
+            return Boolean(peer.audioMuted)
+        return Boolean(clip.audioMuted)
+    }
+
+    function setSelectedAudioMuted(muted) {
+        var clip = selectedTimelineClip
+        if (!clip) return
+        var target = clip
+        var peer = timelineLinkedPeer(clip)
+        if (clip.kind === "video" && peer && peer.kind === "audio")
+            target = peer
+        var updated = mediaFiles.slice()
+        for (var i = 0; i < updated.length; ++i) {
+            if (String(updated[i].clipId || "") === String(target.clipId || "")) {
+                updated[i] = Object.assign({}, updated[i], { audioMuted: Boolean(muted) })
+                break
+            }
+        }
+        recordTimelineHistory(muted ? "Отключить звук" : "Включить звук")
+        mediaFiles = updated
+        saveTimelineMedia(updated)
     }
 
     function timelineClipProperty(item, key, fallback) {
