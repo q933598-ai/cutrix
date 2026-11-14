@@ -720,13 +720,29 @@ ApplicationWindow {
         return base
     }
 
-    function audioPreviewGain(item, seconds) {
+    function audioClipNeedsBoost(item) {
+        if (!item || item.audioMuted) return false
+        var current = Number(root.timelineAnimatedValue(item, "volume",
+            root.timelinePosition, Number(item.volume === undefined ? 100 : item.volume)))
+        if (isFinite(current) && current > 100) return true
+        var frames = root.timelineKeyframesFor(item, "volume")
+        for (var i = 0; i < frames.length; ++i) {
+            if (frames[i].value > 100) return true
+        }
+        return false
+    }
+
+    function audioPreviewGain(item, seconds, preAmplified) {
         if (!item || Boolean(item.audioMuted))
             return 0
         var volume = Number(root.timelineAnimatedValue(item, "volume", seconds,
             Number(item.volume === undefined ? 100 : item.volume)))
         if (!isFinite(volume)) volume = 100
-        volume = Math.max(0, Math.min(200, volume)) / 100
+        volume = Math.max(0, Math.min(500, volume))
+        // Qt AudioOutput is limited to [0, 1]. For values above 100%, MediaTools
+        // supplies a 5x float-WAV segment and the output attenuates it by /500.
+        // Until that segment is ready, the original source remains at unity gain.
+        var gain = preAmplified ? volume / 500 : Math.min(1, volume / 100)
         var duration = Math.max(0.001, timelineClipDuration(item))
         var localTime = Number(seconds) - Number(item.start || 0)
         if (!isFinite(localTime) || localTime < 0 || localTime > duration)
@@ -738,9 +754,7 @@ ApplicationWindow {
             envelope = Math.min(envelope, localTime / fadeIn)
         if (fadeOut > 0.001 && localTime > duration - fadeOut)
             envelope = Math.min(envelope, (duration - localTime) / fadeOut)
-        // Qt AudioOutput expects a linear gain in [0, 1]. Export preserves gains
-        // up to 200%, while preview clamps to the output's supported range.
-        return Math.max(0, Math.min(1, volume * envelope))
+        return Math.max(0, Math.min(1, gain * envelope))
     }
 
     function timelineTrackForKind(kind, requestedTrack) {
@@ -980,7 +994,7 @@ ApplicationWindow {
         if (key === "scale") return { min: 10, max: 300 }
         if (key === "rotation") return { min: -360, max: 360 }
         if (key === "opacity") return { min: 0, max: 100 }
-        if (key === "volume") return { min: 0, max: 200 }
+        if (key === "volume") return { min: 0, max: 500 }
         if (key === "blur") return { min: 0, max: 100 }
         return { min: -7680, max: 7680 }
     }
@@ -2989,14 +3003,28 @@ ApplicationWindow {
                     && item.hasAudio !== false && !item.audioSeparated)
         })
         delegate: MediaPlayer {
+            id: timelineAudioPlayer
             required property var modelData
             readonly property var linkedVideoClip: modelData.kind === "audio"
                 ? root.timelineLinkedPeer(modelData) : null
             readonly property bool usingLinkedReverseProxy: !!linkedVideoClip
                 && Boolean(linkedVideoClip.reverse) && root.hasTimelineReversePreview(linkedVideoClip)
-            source: usingLinkedReverseProxy
+            readonly property string audioInputUrl: usingLinkedReverseProxy
                 ? root.timelinePlaybackUrl(linkedVideoClip) : modelData.url
-            audioOutput: AudioOutput { volume: root.audioPreviewGain(modelData, root.timelinePosition) }
+            readonly property real audioInputOffset: usingLinkedReverseProxy
+                ? 0 : Math.max(0, Number(modelData.sourceOffset || 0))
+            readonly property string boostedAudioSource: {
+                var revision = mediaTools.thumbnailRevision
+                return root.audioClipNeedsBoost(modelData)
+                    ? mediaTools.amplifiedAudioPreview(audioInputUrl, audioInputOffset,
+                        root.timelineClipDuration(modelData))
+                    : ""
+            }
+            source: boostedAudioSource !== "" ? boostedAudioSource : audioInputUrl
+            audioOutput: AudioOutput {
+                volume: root.audioPreviewGain(modelData, root.timelinePosition,
+                    timelineAudioPlayer.boostedAudioSource !== "")
+            }
             property bool timelineAudioActive: timelinePlaybackTimer.running
                 && Number(modelData.start || 0) <= root.timelinePosition
                 && Number(modelData.start || 0) + root.timelineClipDuration(modelData) > root.timelinePosition
@@ -3014,12 +3042,11 @@ ApplicationWindow {
                     pause()
                     return
                 }
-                // A split clip keeps the original source file and stores the
-                // offset of its segment in sourceOffset. Seek into that segment,
-                // not back to the file's beginning when the playhead enters it.
+                // Amplified preview WAVs contain only this clip segment, so they
+                // start at zero. The original source keeps its stored sourceOffset.
                 var localTime = Math.max(0, root.timelinePosition - Number(modelData.start || 0))
-                var sourceOffset = usingLinkedReverseProxy
-                    ? 0 : Math.max(0, Number(modelData.sourceOffset || 0))
+                var sourceOffset = boostedAudioSource !== "" ? 0
+                    : (usingLinkedReverseProxy ? 0 : Math.max(0, Number(modelData.sourceOffset || 0)))
                 var target = (sourceOffset + localTime) * 1000
                 if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
                     if (Math.abs(position - target) > 350) position = target
@@ -4457,7 +4484,7 @@ ApplicationWindow {
                             Text { text: "Громкость"; color: theme.text; font.family: "monospace"; font.pixelSize: 10; Layout.preferredWidth: 65 }
                             CutrixSlider {
                                 Layout.fillWidth: true
-                                from: 0; to: 200; stepSize: 1
+                                from: 0; to: 500; stepSize: 1
                                 enabled: root.selectedClipCanAudio
                                 value: root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)
                                 onPressedChanged: if (pressed) root.recordTimelineHistory("Настройки аудио")
@@ -4466,7 +4493,7 @@ ApplicationWindow {
                             Text {
                                 text: Math.round(root.timelineClipProperty(root.selectedTimelineClip, "volume", 100)) + "%"
                                 color: theme.accent; font.family: "monospace"; font.pixelSize: 10
-                                Layout.preferredWidth: 34; horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: 42; horizontalAlignment: Text.AlignRight
                             }
                         }
                         RowLayout {
@@ -6018,7 +6045,7 @@ ApplicationWindow {
                         CutrixSlider {
                             id: opacitySlider
                             Layout.fillWidth: true
-                            from: 0; to: 100; stepSize: 5
+                            from: 0; to: 500; stepSize: 5
                             value: root.timelineClipProperty(root.selectedTimelineClip, "opacity", 100)
                             enabled: root.selectedClipCanTransform
                                 && root.selectedTimelineClip.kind !== "effect"
@@ -6054,7 +6081,11 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         visible: !!root.selectedTimelineClip
-                        Text { text: "Громкость %"; color: theme.text; font.family: "monospace"; font.pixelSize: 10 }
+                        Text {
+                            text: "Громкость " + Math.round(root.timelineClipProperty(
+                                root.selectedAudioControlClip(), "volume", 100)) + "%"
+                            color: theme.text; font.family: "monospace"; font.pixelSize: 10
+                        }
                         CutrixSlider {
                             id: volumeSlider
                             Layout.fillWidth: true
