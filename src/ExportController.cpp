@@ -253,7 +253,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.rotation = boundedItemValue(item, QStringLiteral("rotation"), 0.0, -360.0, 360.0);
         clip.opacity = boundedItemValue(item, QStringLiteral("opacity"), 100.0, 0.0, 100.0);
         clip.keyframes = item.value(QStringLiteral("keyframes")).toMap();
-        clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 200.0);
+        clip.volume = boundedItemValue(item, QStringLiteral("volume"), 100.0, 0.0, 500.0);
         clip.audioPan = boundedItemValue(item, QStringLiteral("audioPan"), 0.0, -100.0, 100.0);
         clip.audioFadeIn = boundedItemValue(item, QStringLiteral("audioFadeIn"), 0.0, 0.0, 60.0);
         clip.audioFadeOut = boundedItemValue(item, QStringLiteral("audioFadeOut"), 0.0, 0.0, 60.0);
