@@ -258,6 +258,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         clip.audioFadeIn = boundedItemValue(item, QStringLiteral("audioFadeIn"), 0.0, 0.0, 60.0);
         clip.audioFadeOut = boundedItemValue(item, QStringLiteral("audioFadeOut"), 0.0, 0.0, 60.0);
         clip.audioMuted = item.value(QStringLiteral("audioMuted"), false).toBool();
+        clip.audioSeparated = item.value(QStringLiteral("audioSeparated"), false).toBool();
         clip.audioNormalize = item.value(QStringLiteral("audioNormalize"), false).toBool();
         clip.audioCompressor = item.value(QStringLiteral("audioCompressor"), false).toBool();
         clip.audioDenoise = item.value(QStringLiteral("audioDenoise"), false).toBool();
@@ -361,7 +362,7 @@ bool ExportController::startExport(const QVariantList &timelineItems, const QStr
         else if (clip.kind == QStringLiteral("effect") && clip.blur > 0.0)
             blurEffects.push_back(clip);
         if ((clip.kind == QStringLiteral("audio") && (clip.track == 2 || clip.track == 3))
-                || (clip.kind == QStringLiteral("video") && clip.hasAudio))
+                || (clip.kind == QStringLiteral("video") && clip.hasAudio && !clip.audioSeparated))
             audioClips.push_back(clip);
     }
 
