@@ -128,7 +128,7 @@ ApplicationWindow {
     // editing horizon starts at 20 minutes and doubles as clips move further out.
     property real timelineZoom: 4
     // Vertical timeline zoom: one shared lane height keeps labels, clips and hit targets aligned.
-    property int timelineLaneHeight: 52
+    property int timelineLaneHeight: 76
     readonly property int timelineTrackStride: timelineLaneHeight + 3
     property real timelineDragHorizon: 0
     // Temporary group preview keeps paired video/audio blocks visually locked while dragging.
@@ -6331,8 +6331,8 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 280
-            Layout.minimumHeight: 250
+            Layout.preferredHeight: 380
+            Layout.minimumHeight: 340
             color: theme.panel
             border.color: theme.border
             ColumnLayout {
@@ -6417,10 +6417,10 @@ ApplicationWindow {
                         }
                         Button {
                             text: "−"
-                            enabled: root.timelineLaneHeight > 40
+                            enabled: root.timelineLaneHeight > 52
                             Layout.preferredWidth: 26
                             Layout.preferredHeight: 26
-                            onClicked: root.timelineLaneHeight = Math.max(40, root.timelineLaneHeight - 6)
+                            onClicked: root.timelineLaneHeight = Math.max(52, root.timelineLaneHeight - 8)
                             palette.buttonText: theme.text
                             background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                         }
@@ -6434,10 +6434,10 @@ ApplicationWindow {
                         }
                         Button {
                             text: "+"
-                            enabled: root.timelineLaneHeight < 82
+                            enabled: root.timelineLaneHeight < 110
                             Layout.preferredWidth: 26
                             Layout.preferredHeight: 26
-                            onClicked: root.timelineLaneHeight = Math.min(82, root.timelineLaneHeight + 6)
+                            onClicked: root.timelineLaneHeight = Math.min(110, root.timelineLaneHeight + 8)
                             palette.buttonText: theme.text
                             background: Rectangle { color: theme.panelAlt; border.color: theme.border; radius: 2 }
                         }
@@ -6756,7 +6756,7 @@ ApplicationWindow {
                                                     ? 3 : parent.height - height - 2
                                                 width: Math.max(0, parent.width - 6)
                                                 height: timelineClip.modelData.kind === "audio"
-                                                    ? Math.max(1, parent.height - 6) : 16
+                                                    ? Math.max(1, parent.height - 8) : 22
                                                 source: {
                                                     // Refresh this source after FFmpeg finishes the async waveform job.
                                                     var revision = mediaTools.thumbnailRevision
