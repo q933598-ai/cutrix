@@ -155,7 +155,7 @@ QString MediaTools::waveformAt(const QString &url, double sourceOffset, double d
         return {};
 
     const QByteArray keyBytes = QCryptographicHash::hash(
-        (QStringLiteral("cutrix-waveform-v1|") + info.absoluteFilePath()
+        (QStringLiteral("cutrix-waveform-v2|") + info.absoluteFilePath()
          + QLatin1Char('|') + QString::number(info.size())
          + QLatin1Char('|') + QString::number(info.lastModified().toSecsSinceEpoch())
          + QLatin1Char('|') + QString::number(sourceOffset, 'f', 3)
@@ -181,7 +181,7 @@ QString MediaTools::waveformAt(const QString &url, double sourceOffset, double d
             QFile::remove(output);
             const QString filter = QStringLiteral(
                 "aformat=channel_layouts=mono,"
-                "showwavespic=s=1400x64:colors=0x9ccfd8:scale=sqrt:draw=full,"
+                "showwavespic=s=1400x128:colors=0x9ccfd8:scale=sqrt:draw=full,"
                 "format=rgba,colorkey=black:0.02:0.0");
             runTool(ffmpeg, {
                 QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
