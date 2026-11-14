@@ -748,7 +748,11 @@ ApplicationWindow {
         if (kind === "effect") return 5
         if (kind === "audio") return track === 3 ? 3 : 2
         if (kind === "text") return 4
-        if (kind === "video" && (track === 2 || track === 3)) return track
+        if (kind === "video") {
+            // Dropping a video on A1/A2 still creates a linked V+A pair.
+            // Map the requested audio lane to its matching video lane.
+            return track === 1 || track === 3 ? 1 : 0
+        }
         return track === 0 || track === 1 ? track : 1
     }
 
@@ -6969,9 +6973,10 @@ ApplicationWindow {
                                             var requestedStart = Math.max(0, drop.x / Math.max(0.001, timelineCanvas.timelineScale))
                                             var targetTrack = root.timelineTrackForKind(source.kind, timelineTrack.index)
                                             var duration = root.timelineClipDuration(source)
+                                            // A missing probe result means "unknown", not "silent".
+                                            // Only skip the companion clip when ffprobe confirmed no audio.
                                             var separatesAudio = source.kind === "video"
-                                                && source.hasAudio === true
-                                                && (targetTrack === 0 || targetTrack === 1)
+                                                && source.hasAudio !== false
                                             var linkGroupId = separatesAudio ? root.createTimelineClipId() : ""
                                             var audioTrack = targetTrack === 0 ? 2 : 3
                                             var start = separatesAudio
