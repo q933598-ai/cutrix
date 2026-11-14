@@ -2387,9 +2387,19 @@ ApplicationWindow {
         var originalCount = updated.length
         for (var i = 0; i < originalCount; ++i) {
             var video = updated[i]
-            var videoTrack = Number(video.track)
-            if (video.kind !== "video" || !isFinite(videoTrack)
-                    || videoTrack < 0 || videoTrack > 1 || video.hasAudio === false)
+            var sourceTrack = Number(video.track)
+            if (video.kind !== "video" || !isFinite(sourceTrack)
+                    || sourceTrack < 0 || sourceTrack > 3)
+                continue
+
+            // Older builds could place a video item directly on A1/A2.
+            // Move it back to its matching video lane before adding audio.
+            var videoTrack = sourceTrack === 1 || sourceTrack === 3 ? 1 : 0
+            if (sourceTrack !== videoTrack) {
+                video = Object.assign({}, video, { track: videoTrack })
+                updated[i] = video
+            }
+            if (video.hasAudio === false)
                 continue
 
             var groupId = String(video.linkGroupId || "")
