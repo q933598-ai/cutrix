@@ -1979,6 +1979,7 @@ ApplicationWindow {
             statusMessage = "Выбранный клип не найден"
             return
         }
+
         var original = Object.assign({}, updated[index])
         var start = Math.max(0, Number(original.start || 0))
         var duration = timelineClipDuration(original)
@@ -1988,43 +1989,82 @@ ApplicationWindow {
             statusMessage = "Поставь курсор внутрь клипа, чтобы разрезать его"
             return
         }
+
+        var groupId = String(original.linkGroupId || "")
+        var memberIndices = [index]
+        if (groupId !== "") {
+            memberIndices = []
+            for (var memberIndex = 0; memberIndex < updated.length; ++memberIndex) {
+                if (String(updated[memberIndex].linkGroupId || "") === groupId)
+                    memberIndices.push(memberIndex)
+            }
+        }
         var leftDuration = cutAt - start
         var rightDuration = end - cutAt
-        var baseSourceOffset = Math.max(0, Number(original.sourceOffset || 0))
-        original.duration = leftDuration
-        var rightClip
-        if (original.kind === "video" && original.reverse) {
-            // A reversed clip plays its source from the end toward the start.
-            // The left timeline half therefore references the source's later segment.
-            original.sourceOffset = baseSourceOffset + rightDuration
-            updated[index] = original
-            rightClip = Object.assign({}, original, {
-                clipId: createTimelineClipId(),
-                start: cutAt,
-                duration: rightDuration,
-                sourceOffset: baseSourceOffset
-            })
-        } else {
-            updated[index] = original
-            rightClip = Object.assign({}, original, {
-                clipId: createTimelineClipId(),
-                start: cutAt,
-                duration: rightDuration,
-                sourceOffset: baseSourceOffset + leftDuration
-            })
+        var reverseGroup = Boolean(original.reverse)
+        if (groupId !== "") {
+            for (var reverseIndex = 0; reverseIndex < memberIndices.length; ++reverseIndex) {
+                var possibleVideo = updated[memberIndices[reverseIndex]]
+                if (possibleVideo.kind === "video") {
+                    reverseGroup = Boolean(possibleVideo.reverse)
+                    break
+                }
+            }
         }
-        updated.splice(index + 1, 0, rightClip)
+        var baseSourceOffset = Math.max(0, Number(original.sourceOffset || 0))
+        var leftSourceOffset = baseSourceOffset + (reverseGroup ? rightDuration : 0)
+        var rightSourceOffset = baseSourceOffset + (reverseGroup ? 0 : leftDuration)
+        var rightGroupId = memberIndices.length > 1 ? createTimelineClipId() : ""
+
+        var rightClips = []
+        var selectedRightId = ""
+        for (var member = 0; member < memberIndices.length; ++member) {
+            var memberAt = memberIndices[member]
+            var leftClip = Object.assign({}, updated[memberAt], {
+                duration: leftDuration,
+                sourceOffset: leftSourceOffset
+            })
+            var rightClip = Object.assign({}, updated[memberAt], {
+                clipId: createTimelineClipId(),
+                start: cutAt,
+                duration: rightDuration,
+                sourceOffset: rightSourceOffset
+            })
+            if (rightGroupId !== "") {
+                rightClip.linkGroupId = rightGroupId
+                leftClip.linkGroupId = groupId
+            }
+            updated[memberAt] = leftClip
+            rightClips.push(rightClip)
+            if (String(leftClip.clipId || "") === id)
+                selectedRightId = String(rightClip.clipId || "")
+        }
+        // Append the right halves together. Their shared group ID keeps the two
+        // audio/video pieces linked after every split.
+        for (var rightIndex = 0; rightIndex < rightClips.length; ++rightIndex)
+            updated.push(rightClips[rightIndex])
+
         recordTimelineHistory("Разрезать клип")
         mediaFiles = updated
-        selectedTimelineClipId = String(rightClip.clipId)
+        selectedTimelineClipId = selectedRightId
         saveTimelineMedia(updated)
         updateTimelinePreview(timelinePosition)
-        statusMessage = "Клип разрезан по курсору"
+        statusMessage = memberIndices.length > 1
+            ? "Видео и звук разрезаны вместе"
+            : "Клип разрезан по курсору"
     }
 
     function removeTimelineClip(clipId) {
         var id = String(clipId || "")
         if (id === "") return
+        var removed = null
+        for (var i = 0; i < mediaFiles.length; ++i) {
+            if (String(mediaFiles[i].clipId || "") === id) {
+                removed = mediaFiles[i]
+                break
+            }
+        }
+        var groupId = removed ? String(removed.linkGroupId || "") : ""
         var updated = mediaFiles.filter(function(item) {
             return Number(item.track) < 0 || String(item.clipId || "") !== id
         })
@@ -2032,13 +2072,20 @@ ApplicationWindow {
             statusMessage = "Клип уже удалён"
             return
         }
+        // Removing one half detaches the remaining half so it can be edited alone.
+        if (groupId !== "") {
+            for (var j = 0; j < updated.length; ++j) {
+                if (String(updated[j].linkGroupId || "") === groupId)
+                    updated[j] = Object.assign({}, updated[j], { linkGroupId: "" })
+            }
+        }
         recordTimelineHistory("Удалить клип")
         mediaFiles = updated
         if (selectedTimelineClipId === id) selectedTimelineClipId = ""
         saveTimelineMedia(updated)
         contextMenuClipId = ""
         updateTimelinePreview(timelinePosition)
-        statusMessage = "Клип удалён с дорожки; исходник остался в медиатеке"
+        statusMessage = "Клип удалён с дорожки; оставшийся фрагмент отвязан"
     }
 
     function selectMedia(name) {
