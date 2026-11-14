@@ -2879,13 +2879,23 @@ ApplicationWindow {
         })
         delegate: MediaPlayer {
             required property var modelData
-            source: modelData.url
+            readonly property var linkedVideoClip: modelData.kind === "audio"
+                ? root.timelineLinkedPeer(modelData) : null
+            readonly property bool usingLinkedReverseProxy: !!linkedVideoClip
+                && Boolean(linkedVideoClip.reverse) && root.hasTimelineReversePreview(linkedVideoClip)
+            source: usingLinkedReverseProxy
+                ? root.timelinePlaybackUrl(linkedVideoClip) : modelData.url
             audioOutput: AudioOutput { volume: root.audioPreviewGain(modelData, root.timelinePosition) }
             property bool timelineAudioActive: timelinePlaybackTimer.running
                 && Number(modelData.start || 0) <= root.timelinePosition
                 && Number(modelData.start || 0) + root.timelineClipDuration(modelData) > root.timelinePosition
             function syncToTimeline() {
                 if (modelData.kind === "video" && modelData.reverse) {
+                    pause()
+                    return
+                }
+                if (modelData.kind === "audio" && modelData.reverse && linkedVideoClip
+                        && linkedVideoClip.reverse && !usingLinkedReverseProxy) {
                     pause()
                     return
                 }
@@ -2897,7 +2907,8 @@ ApplicationWindow {
                 // offset of its segment in sourceOffset. Seek into that segment,
                 // not back to the file's beginning when the playhead enters it.
                 var localTime = Math.max(0, root.timelinePosition - Number(modelData.start || 0))
-                var sourceOffset = Math.max(0, Number(modelData.sourceOffset || 0))
+                var sourceOffset = usingLinkedReverseProxy
+                    ? 0 : Math.max(0, Number(modelData.sourceOffset || 0))
                 var target = (sourceOffset + localTime) * 1000
                 if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
                     if (Math.abs(position - target) > 350) position = target
@@ -3431,6 +3442,10 @@ ApplicationWindow {
             var cache = Object.assign({}, root.reversePreviewCache)
             cache[id] = { signature: signature, url: String(previewUrl || "") }
             root.reversePreviewCache = cache
+            for (var audioIndex = 0; audioIndex < timelineAudioPlayers.count; ++audioIndex) {
+                var audioPlayer = timelineAudioPlayers.objectAt(audioIndex)
+                if (audioPlayer) audioPlayer.syncToTimeline()
+            }
             var requests = Object.assign({}, root.reversePreviewRequests)
             delete requests[id]
             root.reversePreviewRequests = requests
